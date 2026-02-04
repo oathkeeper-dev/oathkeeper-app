@@ -7,7 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
-nimport android.provider.Settings
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 
