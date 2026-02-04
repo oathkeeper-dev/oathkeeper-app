@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">Oathkeeper</string>
+    <string name="app_subtitle">Privacy-first accountability companion</string>
+    
+    <!-- Main Activity -->
+    <string name="start_service">Start Monitoring</string>
+    <string name="stop_service">Stop Monitoring</string>
+    <string name="settings">Settings</string>
+    <string name="grant_permissions">Grant Missing Permissions</string>
+    <string name="status_label">Service Status:</string>
+    <string name="status_running">Running</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="privacy_notice">All data is stored locally on your device.\nNo information is sent to external servers.</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="capture_settings">Capture Settings</string>
+    <string name="capture_interval">Capture Interval</string>
+    <string name="capture_interval_desc">How often to capture the screen (1-10 seconds)</string>
+    <string name="detection_thresholds">Detection Thresholds</string>
+    <string name="porn_threshold">Porn Detection Threshold</string>
+    <string name="porn_threshold_desc">Minimum confidence level to trigger detection (50-95%)</string>
+    <string name="sexy_threshold">Sexy Content Threshold</string>
+    <string name="sexy_threshold_desc">Minimum confidence level to trigger detection (60-95%)</string>
+    <string name="enable_notifications">Enable Notifications</string>
+    <string name="notifications_desc">Show notifications when content is detected</string>
+    <string name="reset_defaults">Reset to Defaults</string>
+    
+    <!-- Notifications -->
+    <string name="notification_channel_name">Screen Capture Service</string>
+    <string name="notification_channel_description">Oathkeeper screen capture service</string>
+    <string name="notification_title">Oathkeeper</string>
+    <string name="notification_text">Monitoring active</string>
+    
+    <!-- Dialogs -->
+    <string name="welcome_title">Welcome to Oathkeeper</string>
+    <string name="welcome_message">Oathkeeper helps you maintain accountability by monitoring screen content locally on your device. No data is ever sent to external servers.\n\nPlease grant the required permissions to get started.</string>
+    <string name="get_started">Get Started</string>
+    <string name="permissions_required_title">Permissions Required</string>
+    <string name="permissions_required_message">The following permissions are required:</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+</resources>

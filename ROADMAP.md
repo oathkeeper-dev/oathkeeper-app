@@ -9,35 +9,35 @@ This document outlines the phased implementation plan for Oathkeeper. Total esti
 **Goal**: Project setup, core permissions, basic infrastructure
 
 ### Week 1: Project Setup
-- [ ] Create Android project structure (Kotlin)
-- [ ] Configure build.gradle with dependencies:
+- [x] Create Android project structure (Kotlin)
+- [x] Configure build.gradle with dependencies:
   - TensorFlow Lite
   - SQLCipher
   - WebView
   - PDF generation library
-- [ ] Set up Git repository with .gitignore
-- [ ] Create basic package structure:
-  ```
-  com.oathkeeper.app/
-  ├── service/
-  ├── ml/
-  ├── storage/
-  ├── ui/
-  ├── receiver/
-  └── util/
-  ```
-- [ ] Add basic logging framework
+- [x] Set up Git repository with .gitignore
+- [x] Create basic package structure:
+```
+com.oathkeeper.app/
+├── service/
+├── ml/
+├── storage/
+├── ui/
+├── receiver/
+└── util/
+```
+- [x] Add basic logging framework
 
 ### Week 2: Permissions & Services
-- [ ] Implement permission request flow:
+- [x] Implement permission request flow:
   - MediaProjection (screen capture)
   - SYSTEM_ALERT_WINDOW (overlay)
   - PACKAGE_USAGE_STATS (app monitoring)
   - REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-- [ ] Create ForegroundService base class
-- [ ] Implement persistent notification
-- [ ] Create BootReceiver for auto-start
-- [ ] Add SettingsActivity with configuration options
+- [x] Create ForegroundService base class
+- [x] Implement persistent notification
+- [x] Create BootReceiver for auto-start
+- [x] Add SettingsActivity with configuration options
 
 **Deliverables**:
 - App launches and requests all necessary permissions
