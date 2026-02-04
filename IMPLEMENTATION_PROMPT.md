@@ -1,4 +1,12 @@
-# Oathkeeper Implementation Starter Prompt
+# Oathkeeper Implementation Prompt
+
+## Project Status
+
+**Current Phase:** Phase 2 - ML Core Integration (Weeks 3-4)  
+**Last Updated:** February 4, 2026  
+**Previous Phase:** Phase 1 ✅ COMPLETE
+
+---
 
 ## Pre-Implementation Setup
 
@@ -6,160 +14,414 @@
 - `README.md` - Project overview and features
 - `ARCHITECTURE.md` - High-level system design and components
 - `ROADMAP.md` - Implementation phases and timeline
+- `PROGRESS.md` - Current implementation status
 - `docs/TECHNICAL_SPEC.md` - Detailed technical implementation
 - `docs/ML_MODELS.md` - Machine learning pipeline details
 
-## Current Phase
+---
 
-**Phase 1: Foundation (Weeks 1-2)**
+## Phase 1 Completion Summary ✅
 
-Implement the basic infrastructure for the Oathkeeper Android app.
+Phase 1 (Foundation) has been successfully completed. The following components are in place:
 
-## Required Components
+### Implemented Components
 
-### 1. Android Project Structure
-- Language: Kotlin
-- Target SDK: 34
-- Minimum SDK: 29 (Android 10+)
-- Package structure:
-  ```
-  com.oathkeeper.app/
-  ├── service/       # Foreground services
-  ├── ui/            # Activities and Fragments
-  ├── receiver/      # BroadcastReceivers
-  ├── util/          # Utility classes
-  └── model/         # Data classes
-  ```
+**Project Structure:**
+```
+app/src/main/java/com/oathkeeper/app/
+├── OathkeeperApplication.kt          # Application class
+├── model/
+│   ├── DetectionEvent.kt             # Detection data class
+│   ├── PermissionItem.kt             # Permission model
+│   └── TamperEvent.kt                # Tamper event model
+├── receiver/
+│   └── BootReceiver.kt               # Auto-start on boot
+├── service/
+│   └── ScreenCaptureService.kt       # Foreground service with notification
+├── ui/
+│   ├── MainActivity.kt               # Permission flow & welcome dialog
+│   └── SettingsActivity.kt           # Configuration UI
+└── util/
+    ├── Constants.kt                  # App constants
+    ├── PermissionUtils.kt            # Permission helpers
+    └── PreferenceManager.kt          # Settings persistence
+```
 
-### 2. Dependencies (build.gradle)
-```gradle
-dependencies {
-    // Core Android
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+**Build Configuration:**
+- Gradle 8.2 configured
+- TensorFlow Lite 2.14.0 dependency ready
+- SQLCipher 4.5.4 for future encryption
+- Material Design Components
+- Kotlin Coroutines 1.7.3
+
+**Permissions (All 7 implemented):**
+- FOREGROUND_SERVICE
+- FOREGROUND_SERVICE_MEDIA_PROJECTION
+- SYSTEM_ALERT_WINDOW
+- PACKAGE_USAGE_STATS
+- RECEIVE_BOOT_COMPLETED
+- REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+- WRITE_EXTERNAL_STORAGE (maxSdkVersion 28)
+
+**Features Working:**
+- ✅ App launches without crashes
+- ✅ All permissions requested with explanations
+- ✅ Welcome dialog on first run
+- ✅ Foreground service with persistent notification
+- ✅ Service auto-starts on device boot
+- ✅ Settings screen (capture interval, thresholds)
+- ✅ Clean UI/service separation for ML integration
+
+---
+
+## Current Phase: Phase 2 - ML Core Integration
+
+**Goal:** Integrate TensorFlow Lite and implement basic NSFW detection
+
+**Duration:** Weeks 3-4
+
+### Required Components
+
+#### 1. Model Conversion (Week 3)
+
+**A. Download and Convert NSFW Model:**
+- Download GantMan/nsfw_model (MobileNet V2)
+- Convert to TensorFlow Lite format using Python
+- Quantize model for mobile (INT8) to reduce size
+- Expected model size: ~4MB after quantization
+- Add to `app/src/main/assets/nsfw_mobilenet_v2.tflite`
+
+**Conversion Script (Python):**
+```python
+import tensorflow as tf
+import numpy as np
+
+# Load model
+model = tf.keras.models.load_model('nsfw_mobilenet_v2_224x224.h5')
+
+# Convert to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.int8]
+
+# Representative dataset for quantization
+def representative_dataset():
+    for _ in range(100):
+        data = np.random.rand(1, 224, 224, 3).astype(np.float32)
+        yield [data]
+
+converter.representative_dataset = representative_dataset
+tflite_model = converter.convert()
+
+# Save
+with open('app/src/main/assets/nsfw_mobilenet_v2.tflite', 'wb') as f:
+    f.write(tflite_model)
+```
+
+**B. Model Verification:**
+- Test accuracy after conversion
+- Compare with original model
+- Document any accuracy loss
+
+#### 2. TensorFlow Lite Integration (Week 4)
+
+**A. Create NsfwClassifier Class:**
+```kotlin
+// Location: app/src/main/java/com/oathkeeper/app/ml/NsfwClassifier.kt
+class NsfwClassifier(private val assetManager: AssetManager) {
+    private var interpreter: Interpreter? = null
+    private val inputSize = 224
+    private val classes = listOf("drawings", "hentai", "neutral", "porn", "sexy")
     
-    // TensorFlow Lite (for future ML integration)
-    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    init { loadModel() }
     
-    // Database encryption
-    implementation 'net.zetetic:android-database-sqlcipher:4.5.4'
+    fun classify(bitmap: Bitmap): ClassificationResult
+    private fun preprocess(bitmap: Bitmap): Array<Array<Array<FloatArray>>>
+}
+
+data class ClassificationResult(
+    val detectedClass: String,
+    val confidence: Float,
+    val severity: String
+)
+```
+
+**Requirements:**
+- Load TFLite model from assets
+- Resize input to 224x224
+- Normalize pixel values (0-1)
+- Run inference on background thread
+- Return class with highest confidence
+- Use NNAPI for acceleration when available
+
+**B. Update ScreenCaptureService:**
+
+Modify existing `ScreenCaptureService.kt` to:
+1. Initialize `NsfwClassifier` in `onCreate()`
+2. Capture frames from `ImageReader` (currently placeholder)
+3. Preprocess frames (resize to 224x224)
+4. Run classification every capture interval
+5. Log detections that meet thresholds
+
+**Current service has placeholder:**
+```kotlin
+// TODO: Phase 2 - Implement frame capture for ML inference
+// For Phase 1, we just keep the service running with notification
+```
+
+**Replace with:**
+```kotlin
+private fun captureFrame() {
+    val image = imageReader?.acquireLatestImage() ?: return
+    val bitmap = imageToBitmap(image)
+    image.close()
     
-    // Coroutines
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    // Run inference on background thread
+    coroutineScope.launch(Dispatchers.Default) {
+        val result = nsfwClassifier.classify(bitmap)
+        if (shouldTriggerDetection(result)) {
+            logDetection(result)
+        }
+        bitmap.recycle()
+    }
 }
 ```
 
-### 3. AndroidManifest.xml Permissions
-Required permissions:
-- `FOREGROUND_SERVICE`
-- `FOREGROUND_SERVICE_MEDIA_PROJECTION`
-- `SYSTEM_ALERT_WINDOW`
-- `PACKAGE_USAGE_STATS`
-- `RECEIVE_BOOT_COMPLETED`
-- `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
-- `WRITE_EXTERNAL_STORAGE` (maxSdkVersion 28)
-- `USE_BIOMETRIC` (optional)
+**C. Create Database Layer:**
 
-### 4. MainActivity
-- Request all required permissions on first launch
-- Handle permission denials gracefully
-- Provide clear explanations for each permission
-- Launch setup wizard if first run
+**DatabaseManager:**
+```kotlin
+// Location: app/src/main/java/com/oathkeeper/app/storage/DatabaseManager.kt
+object DatabaseManager {
+    fun initialize(context: Context)
+    fun insertEvent(event: DetectionEvent): Long
+    fun getAllEvents(): List<DetectionEvent>
+    fun getEventsByDateRange(start: Long, end: Long): List<DetectionEvent>
+    fun close()
+}
+```
 
-### 5. ScreenCaptureService
-- Extend Service class
-- Run as foreground service
-- Display persistent notification
-- Handle MediaProjection setup (permission request, not actual capture yet)
-- Implement START_STICKY for auto-restart
-- Create notification channel
+**SQLCipher Database Schema:**
+```sql
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    detected_class TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    screenshot_path TEXT,
+    app_name TEXT,
+    is_reviewed BOOLEAN DEFAULT 0,
+    notes TEXT,
+    created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+);
 
-### 6. BootReceiver
-- Extend BroadcastReceiver
-- Listen for BOOT_COMPLETED action
-- Auto-start ScreenCaptureService on boot
-- Handle service restart if terminated
+CREATE INDEX idx_events_timestamp ON events(timestamp);
+CREATE INDEX idx_events_severity ON events(severity);
+```
 
-### 7. SettingsActivity
-- Basic configuration UI
-- Capture interval setting (default 2000ms)
-- Threshold settings for detection
-- Enable/disable notifications
-- View tamper events (basic list)
+**D. Detection Logging:**
 
-## Implementation Order
+When NSFW content detected (confidence > threshold):
+1. Create `DetectionEvent` object
+2. Insert into database
+3. Show notification if enabled (prefs.enableNotifications)
+4. Optionally capture unprocessed screenshot (Phase 3 will add pixelation)
 
-1. **Create project structure and dependencies**
-2. **Set up AndroidManifest with all permissions**
-3. **Implement MainActivity with permission flow**
-4. **Create ScreenCaptureService (foreground service)**
-5. **Implement BootReceiver**
-6. **Create SettingsActivity**
-7. **Test all permissions are requested properly**
-8. **Verify service runs persistently**
-9. **Test auto-restart on boot**
+**Thresholds:**
+- `porn` class: confidence > 0.7 (critical)
+- `sexy` class: confidence > 0.8 (warning)
+- `drawings`/`hentai`: logged as info
 
-## Key Requirements
+#### 3. Frame Processing Pipeline
 
-- All on-device processing (no network calls)
-- Foreground service must show persistent notification
-- Service should auto-restart if killed
-- Handle Android 10+ MediaProjection permission properly
-- Request battery optimization exemption
-- Clean separation between UI and service layers
+**A. ImageReader Setup:**
+```kotlin
+// In ScreenCaptureService.startCapture()
+val metrics = resources.displayMetrics
+imageReader = ImageReader.newInstance(
+    metrics.widthPixels, 
+    metrics.heightPixels, 
+    PixelFormat.RGBA_8888, 
+    2
+)
+```
 
-## What's NOT Included in This Phase
+**B. Frame Preprocessing:**
+```kotlin
+fun preprocess(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+    val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
+    val input = Array(1) { Array(224) { Array(224) { FloatArray(3) } } }
+    
+    for (y in 0 until 224) {
+        for (x in 0 until 224) {
+            val pixel = resized.getPixel(x, y)
+            input[0][y][x][0] = (pixel shr 16 and 0xFF) / 255.0f
+            input[0][y][x][1] = (pixel shr 8 and 0xFF) / 255.0f
+            input[0][y][x][2] = (pixel and 0xFF) / 255.0f
+        }
+    }
+    
+    resized.recycle()
+    return input
+}
+```
+
+### Implementation Order
+
+1. **Download and convert NSFW model**
+   - Create `tools/convert_model.py`
+   - Run conversion script
+   - Verify model accuracy
+   - Add to assets
+
+2. **Create NsfwClassifier class**
+   - Implement model loading
+   - Add preprocessing
+   - Implement inference method
+   - Test classification
+
+3. **Set up SQLCipher database**
+   - Create DatabaseManager
+   - Implement schema
+   - Add CRUD operations
+   - Test database operations
+
+4. **Update ScreenCaptureService**
+   - Initialize classifier
+   - Implement frame capture
+   - Add inference loop
+   - Handle threading
+
+5. **Implement detection logging**
+   - Create DetectionEvent objects
+   - Insert into database
+   - Add notifications
+   - Test end-to-end flow
+
+6. **Add Events Viewer UI**
+   - Create EventsActivity
+   - Display detection list
+   - Show event details
+   - Add filtering
+
+### Key Requirements
+
+- All inference must run on background thread
+- Model must load only once (in onCreate)
+- Handle frame capture errors gracefully
+- Database operations on background thread
+- Show progress when loading model
+- Implement memory management (recycle bitmaps)
+- Add comprehensive error handling
+- Log all detections with timestamps
+
+### What's NOT Included in This Phase
 
 DO NOT implement yet:
-- TensorFlow Lite ML models
-- Actual screenshot capture
-- Image processing or pixelation
-- Database storage
-- Report viewer
-- ML inference pipeline
-- Tamper detection logic (framework only)
-- Encryption
+- YOLO person detection (Phase 3)
+- Smart pixelation (Phase 3)
+- Screenshot encryption (Phase 3)
+- Tamper detection service (Phase 4)
+- Report viewer (Phase 5)
+- Biometric authentication (Phase 6)
+- WebView reports (Phase 5)
+- PDF export (Phase 5)
 
-## Deliverables
+### Deliverables
 
 Working app that:
-1. Requests all permissions on first launch
-2. Shows persistent notification when service runs
-3. Auto-starts on device boot
-4. Has functional settings screen
-5. Service framework is ready for ML integration
-6. No crashes or ANRs
-7. Follows Android best practices
+1. Loads TensorFlow Lite NSFW model from assets
+2. Captures screen frames every 2 seconds
+3. Classifies frames using MobileNet V2
+4. Logs detections to encrypted database
+5. Shows notifications when content detected
+6. Displays list of detection events
+7. Uses user-configurable thresholds
+8. Runs inference on background thread
+9. No ANRs or memory leaks
+10. Follows Android best practices
 
-## Testing Checklist
+### Testing Checklist
 
-- [ ] App launches without crashes
-- [ ] All permissions are requested
-- [ ] Foreground notification displays correctly
-- [ ] Service runs after granting permissions
-- [ ] Service auto-starts on reboot
-- [ ] Settings screen opens and saves preferences
-- [ ] App handles permission denials gracefully
-- [ ] No memory leaks in service
+- [ ] Model loads successfully from assets
+- [ ] Classification runs without crashes
+- [ ] Inference time < 100ms per frame
+- [ ] Database creates and stores events
+- [ ] Detections logged with correct timestamps
+- [ ] Notifications appear when enabled
+- [ ] Thresholds configurable in settings
+- [ ] Memory usage remains stable
+- [ ] No ANRs during inference
+- [ ] Service continues running after detection
+- [ ] Database persists across app restarts
+- [ ] Classification accuracy acceptable
 
-## Notes for Implementer
+### Performance Targets
 
-- Keep code modular for future ML integration
-- Use dependency injection if possible (Hilt/Koin)
-- Follow MVVM or MVI architecture patterns
-- Add comprehensive logging for debugging
-- Test on physical devices, not just emulator
-- Consider Android 10+ permission quirks for MediaProjection
-- Service must handle configuration changes (rotation)
+- **Inference Time:** < 100ms per frame
+- **Memory Usage:** < 50MB for model + inference
+- **Battery Impact:** < 2% additional drain per day
+- **Database Size:** < 10MB for 1000 events
 
-## Next Phase Preview
+### Notes for Implementer
 
-Phase 2 will integrate:
-- TensorFlow Lite models
-- NSFW classification
-- Basic detection logging
-- ML inference pipeline
+- Test model loading time on first run
+- Consider caching model in memory
+- Use coroutines for async operations
+- Implement proper exception handling
+- Add debug logging for troubleshooting
+- Test with various NSFW content types
+- Verify no memory leaks with LeakCanary
+- Consider model warm-up on service start
+- Test on devices with/without NNAPI support
 
-Ensure Phase 1 foundation is solid before proceeding.
+### Current Code Structure
+
+The existing `ScreenCaptureService` has a capture loop ready:
+```kotlin
+captureRunnable = object : Runnable {
+    override fun run() {
+        if (!isRunning) return
+        // TODO: Phase 2 - Implement frame capture for ML inference
+        Log.d(TAG, "Capture tick - Service is running")
+        handler.postDelayed(this, prefs.captureInterval)
+    }
+}
+```
+
+Replace the TODO with actual frame capture and inference.
+
+### Next Phase Preview
+
+Phase 3 will add:
+- YOLOv8-nano person detection
+- Smart pixelation of person regions
+- Screenshot capture on detection
+- WebP compression
+- AES-256-GCM encryption
+
+Ensure Phase 2 detection is solid before proceeding.
+
+---
+
+## Quick Reference
+
+**Key Files to Modify:**
+1. `app/src/main/java/com/oathkeeper/app/service/ScreenCaptureService.kt`
+2. Create: `app/src/main/java/com/oathkeeper/app/ml/NsfwClassifier.kt`
+3. Create: `app/src/main/java/com/oathkeeper/app/storage/DatabaseManager.kt`
+4. Create: `tools/convert_model.py`
+
+**Model Path:**
+- `app/src/main/assets/nsfw_mobilenet_v2.tflite`
+
+**Database:**
+- Location: App private directory
+- Encryption: SQLCipher with AES-256
+- Schema: See TECHNICAL_SPEC.md
+
+**Dependencies Already Added:**
+- TensorFlow Lite 2.14.0
+- SQLCipher 4.5.4
+- Kotlin Coroutines 1.7.3
