@@ -2,9 +2,27 @@
 
 ## Project Status
 
-**Current Phase:** Phase 2 - ML Core Integration (Weeks 3-4)  
-**Last Updated:** February 4, 2026  
+**Current Phase:** Phase 2 - ML Core Integration (Weeks 3-4)
+**Last Updated:** February 9, 2026
 **Previous Phase:** Phase 1 ✅ COMPLETE
+
+---
+
+## ⚠️ MAJOR ARCHITECTURAL CHANGE (Feb 9, 2026)
+
+**Decision**: Switched from MediaProjection to AccessibilityService for screen capture.
+
+**Rationale**:
+- MediaProjection requires continuous "screen sharing" notification (poor UX)
+- AccessibilityService provides event-driven capture without screen sharing dialog
+- Covenant Eyes and similar apps likely use this approach
+- Better battery efficiency and user experience
+
+**Impact on Phase 2**:
+- Replace ScreenCaptureService with OathkeeperAccessibilityService
+- Different permission model (Accessibility Service vs MediaProjection)
+- Use `takeScreenshot()` API (requires API 30+)
+- Event-driven capture instead of continuous frame capture
 
 ---
 
@@ -12,10 +30,10 @@
 
 **IMPORTANT**: Read these documentation files first to understand the full architecture:
 - `README.md` - Project overview and features
-- `ARCHITECTURE.md` - High-level system design and components
+- `ARCHITECTURE.md` - Updated with AccessibilityService approach
 - `ROADMAP.md` - Implementation phases and timeline
 - `PROGRESS.md` - Current implementation status
-- `docs/TECHNICAL_SPEC.md` - Detailed technical implementation
+- `docs/TECHNICAL_SPEC.md` - Detailed technical implementation (UPDATED with AccessibilityService)
 - `docs/ML_MODELS.md` - Machine learning pipeline details
 
 ---
@@ -154,38 +172,112 @@ data class ClassificationResult(
 - Return class with highest confidence
 - Use NNAPI for acceleration when available
 
-**B. Update ScreenCaptureService:**
+**B. Create OathkeeperAccessibilityService:**
 
-Modify existing `ScreenCaptureService.kt` to:
-1. Initialize `NsfwClassifier` in `onCreate()`
-2. Capture frames from `ImageReader` (currently placeholder)
-3. Preprocess frames (resize to 224x224)
-4. Run classification every capture interval
-5. Log detections that meet thresholds
+**NEW APPROACH**: Replace ScreenCaptureService with AccessibilityService
 
-**Current service has placeholder:**
+**Create new file**: `app/src/main/java/com/oathkeeper/app/service/OathkeeperAccessibilityService.kt`
+
+**Requirements:**
+1. Extend `AccessibilityService` base class
+2. Initialize `NsfwClassifier` in `onServiceConnected()`
+3. Monitor window state changes and app switches
+4. Capture screenshots using `takeScreenshot()` (API 30+)
+5. Run classification on captured screenshots
+6. Log detections that meet thresholds
+
+**Key differences from MediaProjection approach:**
+- No ImageReader / VirtualDisplay setup
+- No continuous frame capture
+- Event-driven (on app switch, window change, timer)
+- Uses `takeScreenshot()` callback API
+- No "screen sharing" notification
+
+**Implementation outline:**
 ```kotlin
-// TODO: Phase 2 - Implement frame capture for ML inference
-// For Phase 1, we just keep the service running with notification
-```
+class OathkeeperAccessibilityService : AccessibilityService() {
+private lateinit var nsfwClassifier: NsfwClassifier
 
-**Replace with:**
-```kotlin
-private fun captureFrame() {
-    val image = imageReader?.acquireLatestImage() ?: return
-    val bitmap = imageToBitmap(image)
-    image.close()
-    
-    // Run inference on background thread
-    coroutineScope.launch(Dispatchers.Default) {
-        val result = nsfwClassifier.classify(bitmap)
-        if (shouldTriggerDetection(result)) {
-            logDetection(result)
-        }
-        bitmap.recycle()
-    }
+override fun onServiceConnected() {
+super.onServiceConnected()
+nsfwClassifier = NsfwClassifier(assets)
+// Configure service to listen for window changes
+}
+
+override fun onAccessibilityEvent(event: AccessibilityEvent) {
+when (event.eventType) {
+AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+// App switched - check if relevant
+if (isRelevantApp(event.packageName?.toString())) {
+captureAndAnalyze()
+}
+}
+}
+}
+
+private fun captureAndAnalyze() {
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+takeScreenshot(Display.DEFAULT_DISPLAY, executor, 
+object : TakeScreenshotCallback {
+override fun onSuccess(screenshot: ScreenshotResult) {
+val bitmap = Bitmap.wrapHardwareBuffer(
+screenshot.hardwareBuffer, 
+screenshot.colorSpace
+)
+bitmap?.let { processScreenshot(it) }
+}
+override fun onFailure(errorCode: Int) {
+Log.e(TAG, "Screenshot failed: $errorCode")
+}
+})
+}
+}
+
+private fun processScreenshot(bitmap: Bitmap) {
+CoroutineScope(Dispatchers.Default).launch {
+val classification = nsfwClassifier.classify(bitmap)
+if (shouldTriggerCapture(classification)) {
+// Log detection, save screenshot, etc.
+}
+bitmap.recycle()
+}
+}
 }
 ```
+
+**C. Create Accessibility Service Configuration:**
+
+**Create**: `app/src/main/res/xml/accessibility_service_config.xml`
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+android:description="@string/accessibility_service_description"
+android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+android:accessibilityFlags="flagDefault|flagReportViewIds"
+android:canRetrieveWindowContent="true"
+android:canTakeScreenshot="true"
+android:notificationTimeout="100" />
+```
+
+**D. Update AndroidManifest.xml:**
+
+Add AccessibilityService declaration:
+```xml
+<service android:name=".service.OathkeeperAccessibilityService"
+android:enabled="true"
+android:exported="true"
+android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+<intent-filter>
+<action android:name="android.accessibilityservice.AccessibilityService" />
+</intent-filter>
+<meta-data
+android:name="android.accessibilityservice"
+android:resource="@xml/accessibility_service_config" />
+</service>
+```
+
+**Note**: Disable or remove the old ScreenCaptureService (MediaProjection-based)
 
 **C. Create Database Layer:**
 
@@ -267,43 +359,71 @@ fun preprocess(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
 }
 ```
 
-### Implementation Order
+### Phase 1.5: Architecture Migration
 
-1. **Download and convert NSFW model**
-   - Create `tools/convert_model.py`
-   - Run conversion script
-   - Verify model accuracy
-   - Add to assets
+**NEW**: Before Phase 2 ML work, migrate from MediaProjection to AccessibilityService:
 
-2. **Create NsfwClassifier class**
-   - Implement model loading
-   - Add preprocessing
-   - Implement inference method
-   - Test classification
+1. **Create OathkeeperAccessibilityService**
+- Extend AccessibilityService base class
+- Implement onServiceConnected()
+- Configure accessibility service XML
+- Add to AndroidManifest.xml
 
-3. **Set up SQLCipher database**
-   - Create DatabaseManager
-   - Implement schema
-   - Add CRUD operations
-   - Test database operations
+2. **Update MainActivity permission flow**
+- Remove MediaProjection permission requests
+- Add AccessibilityService enablement flow
+- Guide user to system settings to enable service
+- Handle service connection status
 
-4. **Update ScreenCaptureService**
-   - Initialize classifier
-   - Implement frame capture
-   - Add inference loop
-   - Handle threading
+3. **Update PermissionUtils**
+- Add checkAccessibilityServiceEnabled()
+- Add requestAccessibilityService()
+- Remove MediaProjection-related code
 
-5. **Implement detection logging**
-   - Create DetectionEvent objects
-   - Insert into database
-   - Add notifications
-   - Test end-to-end flow
+4. **Test AccessibilityService**
+- Verify service starts correctly
+- Test screenshot capture on Android 11+
+- Confirm no "screen sharing" notification
 
-6. **Add Events Viewer UI**
-   - Create EventsActivity
-   - Display detection list
-   - Show event details
-   - Add filtering
+---
+
+### Phase 2 Implementation Order
+
+5. **Download and convert NSFW model**
+- Create `tools/convert_model.py`
+- Run conversion script
+- Verify model accuracy
+- Add to assets
+
+6. **Create NsfwClassifier class**
+- Implement model loading
+- Add preprocessing
+- Implement inference method
+- Test classification
+
+7. **Set up SQLCipher database**
+- Create DatabaseManager
+- Implement schema
+- Add CRUD operations
+- Test database operations
+
+8. **Update OathkeeperAccessibilityService**
+- Initialize classifier in onServiceConnected()
+- Implement captureAndAnalyze()
+- Add inference loop
+- Handle threading
+
+9. **Implement detection logging**
+- Create DetectionEvent objects
+- Insert into database
+- Add notifications
+- Test end-to-end flow
+
+10. **Add Events Viewer UI**
+- Create EventsActivity
+- Display detection list
+- Show event details
+- Add filtering
 
 ### Key Requirements
 

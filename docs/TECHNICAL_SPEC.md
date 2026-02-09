@@ -47,57 +47,82 @@
 
 ---
 
+## Architecture Update (Feb 9, 2026)
+
+**MAJOR CHANGE**: Switched from MediaProjection to AccessibilityService for screen capture. This provides:
+- No "screen sharing" notification/permission dialog
+- Event-driven capture (more efficient)
+- Better user experience (more discreet)
+
+---
+
 ## Android Manifest Permissions
 
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <!-- Core functionality -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-    
-    <!-- Overlay for tamper warnings -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    
-    <!-- App monitoring -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
-    
-    <!-- Auto-restart -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    
-    <!-- Prevent battery optimization -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    
-    <!-- Storage (for Android < 10) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
-                     android:maxSdkVersion="28" />
-    
-    <!-- Biometric auth (optional) -->
-    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    
-    <application
-        android:name=".OathkeeperApplication"
-        android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.Oathkeeper">
-        
-        <!-- Main Activity -->
-        <activity android:name=".MainActivity"
-                  android:exported="true"
-                  android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        
-        <!-- Screen Capture Service -->
-        <service android:name=".service.ScreenCaptureService"
-                 android:enabled="true"
-                 android:exported="false"
+
+<!-- Accessibility Service (REQUIRED - replaces MediaProjection) -->
+<uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+
+<!-- Foreground service for continuous operation -->
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+<!-- Overlay for tamper warnings -->
+<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+<!-- App monitoring (for app usage stats) -->
+<uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+
+<!-- Auto-restart -->
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+<!-- Prevent battery optimization -->
+<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+<!-- Storage -->
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+android:maxSdkVersion="28" />
+
+<!-- Biometric auth (optional) -->
+<uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+<application
+android:name=".OathkeeperApplication"
+android:allowBackup="false"
+android:icon="@mipmap/ic_launcher"
+android:label="@string/app_name"
+android:roundIcon="@mipmap/ic_launcher_round"
+android:supportsRtl="true"
+android:theme="@style/Theme.Oathkeeper">
+
+<!-- Main Activity -->
+<activity android:name=".MainActivity"
+android:exported="true"
+android:launchMode="singleTask">
+<intent-filter>
+<action android:name="android.intent.action.MAIN" />
+<category android:name="android.intent.category.LAUNCHER" />
+</intent-filter>
+</activity>
+
+<!-- Accessibility Service (NEW - replaces ScreenCaptureService) -->
+<service android:name=".service.OathkeeperAccessibilityService"
+android:enabled="true"
+android:exported="true"
+android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+<intent-filter>
+<action android:name="android.accessibilityservice.AccessibilityService" />
+</intent-filter>
+<meta-data
+android:name="android.accessibilityservice"
+android:resource="@xml/accessibility_service_config" />
+</service>
+
+<!-- Legacy Screen Capture Service (deprecated, kept for reference) -->
+<service android:name=".service.ScreenCaptureService"
+android:enabled="false"
+android:exported="false"
                  android:foregroundServiceType="mediaProjection" />
         
         <!-- Tamper Detection Service -->
@@ -120,137 +145,210 @@
 
 ## Key Classes
 
-### ScreenCaptureService.kt
+### OathkeeperAccessibilityService.kt (NEW)
+
+**Replaces MediaProjection-based ScreenCaptureService**
 
 ```kotlin
+class OathkeeperAccessibilityService : AccessibilityService() {
+
+private lateinit var nsfwClassifier: NsfwClassifier
+private lateinit var personDetector: PersonDetector
+private val handler = Handler(Looper.getMainLooper())
+private var lastCaptureTime = 0L
+private val captureIntervalMs = 2000L // 2 seconds
+
+companion object {
+private const val TAG = "OathkeeperAccessibility"
+private val RELEVANT_PACKAGES = setOf(
+"com.android.chrome",
+"org.mozilla.firefox",
+"com.opera.browser",
+"com.facebook.katana",
+"com.instagram.android",
+"com.twitter.android",
+"com.reddit.frontpage",
+// Add more as needed
+)
+}
+
+override fun onServiceConnected() {
+super.onServiceConnected()
+Log.d(TAG, "Accessibility service connected")
+
+// Configure service
+serviceInfo = serviceInfo.apply {
+eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+AccessibilityEvent.TYPE_VIEW_CLICKED
+feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+notificationTimeout = 100
+}
+
+// Initialize ML models
+nsfwClassifier = NsfwClassifier(assets)
+personDetector = PersonDetector(assets)
+
+// Start periodic capture timer
+startPeriodicCapture()
+}
+
+override fun onAccessibilityEvent(event: AccessibilityEvent) {
+when (event.eventType) {
+AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+// App switched - check if it's a relevant app
+val packageName = event.packageName?.toString()
+if (packageName != null && isRelevantApp(packageName)) {
+Log.d(TAG, "Switched to relevant app: $packageName")
+captureAndAnalyze()
+}
+}
+AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+// Content changed - might need new screenshot
+if (shouldCapture()) {
+captureAndAnalyze()
+}
+}
+}
+}
+
+override fun onInterrupt() {
+Log.d(TAG, "Accessibility service interrupted")
+}
+
+private fun isRelevantApp(packageName: String): Boolean {
+return RELEVANT_PACKAGES.contains(packageName)
+}
+
+private fun shouldCapture(): Boolean {
+val currentTime = System.currentTimeMillis()
+return (currentTime - lastCaptureTime) >= captureIntervalMs
+}
+
+private fun startPeriodicCapture() {
+handler.postDelayed(object : Runnable {
+override fun run() {
+if (isRelevantAppInForeground()) {
+captureAndAnalyze()
+}
+handler.postDelayed(this, captureIntervalMs)
+}
+}, captureIntervalMs)
+}
+
+private fun isRelevantAppInForeground(): Boolean {
+// Check current foreground app using UsageStatsManager
+val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+val time = System.currentTimeMillis()
+val stats = usageStatsManager.queryUsageStats(
+UsageStatsManager.INTERVAL_DAILY,
+time - 1000 * 10, // Last 10 seconds
+time
+)
+
+val recentApp = stats?.maxByOrNull { it.lastTimeUsed }
+return recentApp != null && isRelevantApp(recentApp.packageName)
+}
+
+private fun captureAndAnalyze() {
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+takeScreenshot(Display.DEFAULT_DISPLAY, executor, object : TakeScreenshotCallback {
+override fun onSuccess(screenshot: ScreenshotResult) {
+val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
+bitmap?.let {
+lastCaptureTime = System.currentTimeMillis()
+processScreenshot(it)
+}
+}
+
+override fun onFailure(errorCode: Int) {
+Log.e(TAG, "Screenshot failed with error: $errorCode")
+}
+})
+} else {
+// Fallback for Android 10 and below - use MediaProjection
+// or skip screenshot capture
+Log.w(TAG, "Screenshot requires Android 11+")
+}
+}
+
+private fun processScreenshot(bitmap: Bitmap) {
+CoroutineScope(Dispatchers.Default).launch {
+// Stage 1: Classify
+val classification = nsfwClassifier.classify(bitmap)
+
+if (shouldTriggerCapture(classification)) {
+// Stage 2: Detect persons
+val boundingBoxes = personDetector.detect(bitmap)
+
+// Process and save
+val pixelatedBitmap = ScreenshotProcessor.pixelate(bitmap, boundingBoxes)
+val encryptedData = EncryptionManager.encrypt(pixelatedBitmap)
+val filePath = StorageManager.saveScreenshot(encryptedData)
+
+// Log event
+val event = DetectionEvent(
+timestamp = System.currentTimeMillis(),
+detectedClass = classification.detectedClass,
+severity = classification.severity,
+confidence = classification.confidence,
+screenshotPath = filePath,
+appName = getCurrentAppName()
+)
+DatabaseManager.insertEvent(event)
+
+// Clean up
+pixelatedBitmap.recycle()
+}
+
+bitmap.recycle()
+}
+}
+
+private fun shouldTriggerCapture(classification: ClassificationResult): Boolean {
+return when (classification.detectedClass) {
+"porn" -> classification.confidence > 0.7
+"sexy" -> classification.confidence > 0.8
+else -> false
+}
+}
+
+private fun getCurrentAppName(): String {
+// Return current foreground app name
+val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+val time = System.currentTimeMillis()
+val stats = usageStatsManager.queryUsageStats(
+UsageStatsManager.INTERVAL_DAILY,
+time - 1000 * 10,
+time
+)
+return stats?.maxByOrNull { it.lastTimeUsed }?.packageName ?: "unknown"
+}
+}
+```
+
+### Accessibility Service Configuration (accessibility_service_config.xml)
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+android:description="@string/accessibility_service_description"
+android:packageNames="com.android.chrome,org.mozilla.firefox,com.facebook.katana"
+android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked"
+android:accessibilityFlags="flagDefault|flagReportViewIds"
+android:canRetrieveWindowContent="true"
+android:canTakeScreenshot="true"
+android:notificationTimeout="100" />
+```
+
+### Legacy ScreenCaptureService.kt (DEPRECATED - kept for reference)
+
+**Note:** The MediaProjection-based approach below is replaced by AccessibilityService above. Kept for documentation purposes only.
+
+```kotlin
+// OLD IMPLEMENTATION - DO NOT USE
 class ScreenCaptureService : Service() {
-    
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
-    private lateinit var nsfwClassifier: NsfwClassifier
-    private lateinit var personDetector: PersonDetector
-    private val handler = Handler(Looper.getMainLooper())
-    private val captureRunnable = object : Runnable {
-        override fun run() {
-            captureFrame()
-            handler.postDelayed(this, CAPTURE_INTERVAL_MS)
-        }
-    }
-    
-    companion object {
-        const val CAPTURE_INTERVAL_MS = 2000L // 2 seconds
-        const val NOTIFICATION_CHANNEL_ID = "oathkeeper_capture"
-    }
-    
-    override fun onCreate() {
-        super.onCreate()
-        nsfwClassifier = NsfwClassifier(assets)
-        personDetector = PersonDetector(assets)
-        createNotificationChannel()
-    }
-    
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val resultCode = intent?.getIntExtra("resultCode", -1) ?: -1
-        val data = intent?.getParcelableExtra<Intent>("data")
-        
-        if (resultCode != -1 && data != null) {
-            startCapture(resultCode, data)
-        }
-        
-        return START_STICKY
-    }
-    
-    private fun startCapture(resultCode: Int, data: Intent) {
-        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) 
-            as MediaProjectionManager
-        
-        mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
-        
-        val metrics = resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
-        
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "OathkeeperCapture",
-            width, height, density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, handler
-        )
-        
-        handler.post(captureRunnable)
-    }
-    
-    private fun captureFrame() {
-        val image = imageReader?.acquireLatestImage() ?: return
-        
-        val buffer = image.planes[0].buffer
-        val pixelStride = image.planes[0].pixelStride
-        val rowStride = image.planes[0].rowStride
-        val rowPadding = rowStride - pixelStride * image.width
-        
-        val bitmap = Bitmap.createBitmap(
-            image.width + rowPadding / pixelStride,
-            image.height, Bitmap.Config.ARGB_8888
-        )
-        bitmap.copyPixelsFromBuffer(buffer)
-        image.close()
-        
-        // Process frame off main thread
-        GlobalScope.launch(Dispatchers.Default) {
-            processFrame(bitmap)
-        }
-    }
-    
-    private suspend fun processFrame(bitmap: Bitmap) {
-        // Stage 1: Classify
-        val classification = nsfwClassifier.classify(bitmap)
-        
-        if (shouldTriggerCapture(classification)) {
-            // Stage 2: Detect persons
-            val boundingBoxes = personDetector.detect(bitmap)
-            
-            // Capture and process screenshot
-            val pixelatedBitmap = ScreenshotProcessor.pixelate(bitmap, boundingBoxes)
-            val encryptedData = EncryptionManager.encrypt(pixelatedBitmap)
-            val filePath = StorageManager.saveScreenshot(encryptedData)
-            
-            // Log event
-            val event = DetectionEvent(
-                timestamp = System.currentTimeMillis(),
-                detectedClass = classification.detectedClass,
-                severity = classification.severity,
-                confidence = classification.confidence,
-                screenshotPath = filePath
-            )
-            DatabaseManager.insertEvent(event)
-            
-            // Clean up
-            bitmap.recycle()
-            pixelatedBitmap.recycle()
-        }
-    }
-    
-    private fun shouldTriggerCapture(classification: ClassificationResult): Boolean {
-        return when (classification.detectedClass) {
-            "porn" -> classification.confidence > 0.7
-            "sexy" -> classification.confidence > 0.8
-            else -> false
-        }
-    }
-    
-    override fun onBind(intent: Intent?): IBinder? = null
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        handler.removeCallbacks(captureRunnable)
-        virtualDisplay?.release()
-        imageReader?.close()
-        mediaProjection?.stop()
-    }
+// ... (previous MediaProjection implementation)
 }
 ```
 

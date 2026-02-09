@@ -6,6 +6,65 @@ Oathkeeper is a local accountability application for Android that monitors scree
 
 ## High-Level Architecture
 
+**ARCHITECTURE UPDATE (Feb 9, 2026):** Switched from MediaProjection to AccessibilityService for screen capture. This provides a more discreet user experience without continuous "screen sharing" notifications.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Android Device                                                  │
+│                                                                 │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ AccessibilityService                      │                    │
+│  │ (Screen monitoring & capture)             │                    │
+│  │                                           │                    │
+│  │ • Monitors window content changes         │                    │
+│  │ • Detects foreground app switches         │                    │
+│  │ • Captures screenshots via API 30+      │                    │
+│  │ • Triggers analysis on relevant events  │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ Event-Driven Capture Logic              │                    │
+│  │ - App switched to browser/social        │                    │
+│  │ - URL accessed (via VPN optional)       │                    │
+│  │ - Periodic check every 2-5 seconds      │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ ML Inference Pipeline                   │                    │
+│  │ ┌─────────────┐ ┌─────────────┐        │                    │
+│  │ │ NSFW        │ │ Person      │        │                    │
+│  │ │ Classifier  │───▶│ Detector    │        │                    │
+│  │ │ (4MB)       │ │ (3.5MB)     │        │                    │
+│  │ └─────────────┘ └─────────────┘        │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ Screenshot Processing                   │                    │
+│  │ - Apply pixelation to bounding boxes    │                    │
+│  │ - Compress to WebP format                 │                    │
+│  │ - Encrypt with AES-256                  │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ Local Storage Layer                     │                    │
+│  │ ┌──────────────┐ ┌────────────────┐    │                    │
+│  │ │ SQLCipher    │ │ Encrypted      │    │                    │
+│  │ │ Database     │ │ File Storage   │    │                    │
+│  │ │ (Events)     │ │ (Screenshots)  │    │                    │
+│  │ └──────────────┘ └────────────────┘    │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────────────────────────────┐                    │
+│  │ Report Viewer                           │                    │
+│  │ (Local WebView with Interactive UI)     │                    │
+│  └─────────────────────────────────────────┘                    │
+│           │                                                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Android Device                           │
@@ -55,24 +114,37 @@ Oathkeeper is a local accountability application for Android that monitors scree
 
 ## Core Components
 
-### 1. Screen Capture Service
+### 1. Screen Monitoring Service (AccessibilityService)
 
-**Purpose**: Continuously capture screen frames for analysis
+**Purpose**: Monitor screen content and capture screenshots for analysis
 
 **Implementation**:
-- Android `MediaProjection` API
-- Foreground service with persistent notification
-- Frame capture every 2-3 seconds when screen is active
-- Frame buffer management (keeps last 3 frames to reduce latency)
+- Android `AccessibilityService` API
+- Extends `AccessibilityService` base class
+- Event-driven capture (on window content changes, app switches)
+- Periodic capture every 2-5 seconds when relevant apps are active
+- Uses `takeScreenshot()` API (Android 11+ / API 30+)
 
 **Permissions Required**:
-- `FOREGROUND_SERVICE`
-- `MediaProjection` permission (user grants via system dialog)
+- `BIND_ACCESSIBILITY_SERVICE` - Declared in manifest
+- User must enable service in Accessibility settings
+- No "screen sharing" dialog - more discreet UX
+
+**Advantages over MediaProjection**:
+- No persistent "screen sharing" notification
+- No need for MediaProjection permission dialog
+- Can detect app/window changes in real-time
+- More power-efficient (event-driven vs continuous)
 
 **Challenges**:
-- Android 10+ requires re-granting permission after each session
-- Battery optimization must be disabled
-- Cannot capture DRM-protected content (Netflix, etc.)
+- Requires Accessibility Service permission (different UX)
+- `takeScreenshot()` requires API 30+ (Android 11+)
+- Screenshots may be at screen resolution (larger files)
+- Some OEMs restrict background services
+
+**Fallback for older devices**:
+- MediaProjection for Android 10 and below
+- Or reduced functionality mode
 
 ### 2. ML Inference Pipeline
 
@@ -201,6 +273,52 @@ CREATE TABLE settings (
 ## Data Flow
 
 ```
+User opens app/grants permissions
+│
+▼
+Enable Accessibility Service in system settings
+│
+▼
+AccessibilityService starts monitoring
+│
+▼
+Event detected (app switch/content change/timer)
+│
+▼
+Capture screenshot via takeScreenshot() API
+│
+▼
+Resize to 224x224 ──▶ NSFW Classifier
+│                     │
+│                     ▼
+│    Confidence < threshold ──▶ Discard screenshot
+│                     │
+│                     ▼
+│    Confidence >= threshold
+│                     │
+▼                     ▼
+Captured screenshot ───▶ Person Detector (YOLO)
+│
+▼
+Get bounding boxes
+│
+▼
+Apply pixelation to bounding boxes
+│
+▼
+Convert to WebP and encrypt
+│
+▼
+Save to encrypted storage
+│
+▼
+Log event to database
+│
+▼
+Show detection notification (optional)
+```
+
+**Key Difference**: Screenshots are captured on-demand via AccessibilityService rather than continuously from a VirtualDisplay. This reduces battery impact and eliminates the "screen sharing" notification.
 User opens app/grants permissions
          │
          ▼
