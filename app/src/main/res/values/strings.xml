@@ -10,6 +10,8 @@
     <string name="status_label">Service Status:</string>
     <string name="status_running">Running</string>
     <string name="status_stopped">Stopped</string>
+    <string name="status_ready">Ready</string>
+    <string name="view_events">View Events</string>
     <string name="privacy_notice">All data is stored locally on your device.\nNo information is sent to external servers.</string>
     
     <!-- Settings -->
@@ -26,11 +28,31 @@
     <string name="notifications_desc">Show notifications when content is detected</string>
     <string name="reset_defaults">Reset to Defaults</string>
     
+    <!-- Events -->
+    <string name="events_title">Detection Events</string>
+    <string name="no_events">No detection events yet</string>
+    <string name="event_details">Event Details</string>
+    <string name="mark_reviewed">Mark as Reviewed</string>
+    <string name="delete_event">Delete Event</string>
+    <string name="severity_critical">Critical</string>
+    <string name="severity_warning">Warning</string>
+    <string name="severity_info">Info</string>
+    <string name="severity_low">Low</string>
+    <string name="confidence_label">Confidence:</string>
+    <string name="app_label">App:</string>
+    <string name="timestamp_label">Time:</string>
+    
+    <!-- Accessibility Service -->
+    <string name="accessibility_service_name">Oathkeeper Screen Monitor</string>
+    <string name="accessibility_service_description">Oathkeeper monitors screen content to detect inappropriate material and protect your digital wellbeing. No data is sent to external servers. All processing happens locally on your device.</string>
+    
     <!-- Notifications -->
     <string name="notification_channel_name">Screen Capture Service</string>
     <string name="notification_channel_description">Oathkeeper screen capture service</string>
     <string name="notification_title">Oathkeeper</string>
     <string name="notification_text">Monitoring active</string>
+    <string name="notification_detection_critical">Critical content detected</string>
+    <string name="notification_detection_warning">Potentially inappropriate content detected</string>
     
     <!-- Dialogs -->
     <string name="welcome_title">Welcome to Oathkeeper</string>
@@ -40,4 +62,6 @@
     <string name="permissions_required_message">The following permissions are required:</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="enable_accessibility_title">Enable Accessibility Service</string>
+    <string name="enable_accessibility_message">To enable Oathkeeper monitoring:\n\n1. Tap "OK" to open Accessibility Settings\n2. Find "Oathkeeper" in the list\n3. Turn the toggle ON\n4. Tap "Allow" on the confirmation dialog\n5. Return to this app\n\nAccessibility service is required for monitoring screen content. No data is sent to external servers.</string>
 </resources>

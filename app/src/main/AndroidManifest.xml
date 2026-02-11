@@ -5,6 +5,10 @@
     <!-- Core functionality -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Accessibility Service -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
 
     <!-- Overlay for tamper warnings -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -25,6 +29,9 @@
 
     <!-- Biometric auth (optional) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <!-- Notification permission for Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".OathkeeperApplication"
@@ -53,10 +60,32 @@
             android:label="@string/settings_title"
             android:parentActivityName=".ui.MainActivity" />
 
-        <!-- Screen Capture Service -->
+        <!-- Events Activity -->
+        <activity
+            android:name=".ui.EventsActivity"
+            android:exported="false"
+            android:label="@string/events_title"
+            android:parentActivityName=".ui.MainActivity" />
+
+        <!-- Oathkeeper Accessibility Service -->
+        <service
+            android:name=".service.OathkeeperAccessibilityService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Screen Capture Service (Legacy - can be removed in future) -->
         <service
             android:name=".service.ScreenCaptureService"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 

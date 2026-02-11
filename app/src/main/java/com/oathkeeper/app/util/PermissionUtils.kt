@@ -1,5 +1,6 @@
 package com.oathkeeper.app.util
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AppOpsManager
 import android.content.Context
@@ -8,8 +9,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import com.oathkeeper.app.service.OathkeeperAccessibilityService
 
 object PermissionUtils {
     
@@ -78,5 +81,41 @@ object PermissionUtils {
                 requestCode
             )
         }
+    }
+    
+    // Accessibility Service permissions
+    fun isAccessibilityServiceEnabled(context: Context): Boolean {
+        val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices = accessibilityManager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        )
+        
+        val serviceComponentName = "${context.packageName}/${OathkeeperAccessibilityService::class.java.canonicalName}"
+        
+        return enabledServices.any { it.id == serviceComponentName }
+    }
+    
+    fun openAccessibilitySettings(activity: Activity) {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        activity.startActivity(intent)
+    }
+    
+    fun getAccessibilityServiceInstructions(): String {
+        return """
+            To enable Oathkeeper monitoring:
+            
+            1. Tap "OK" to open Accessibility Settings
+            2. Find "Oathkeeper" in the list
+            3. Turn the toggle ON
+            4. Tap "Allow" on the confirmation dialog
+            5. Return to this app
+            
+            Accessibility service is required for:
+            - Monitoring screen content
+            - Taking screenshots for analysis
+            - Protecting your digital wellbeing
+            
+            No data is sent to external servers.
+        """.trimIndent()
     }
 }

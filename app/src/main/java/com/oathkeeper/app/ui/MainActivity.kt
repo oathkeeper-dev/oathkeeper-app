@@ -2,7 +2,6 @@ package com.oathkeeper.app.ui
 
 import android.app.Activity
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -11,11 +10,11 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.oathkeeper.app.R
-import com.oathkeeper.app.service.ScreenCaptureService
+import com.oathkeeper.app.service.OathkeeperAccessibilityService
+import com.oathkeeper.app.storage.DatabaseManager
 import com.oathkeeper.app.util.Constants
 import com.oathkeeper.app.util.PreferenceManager
 import com.oathkeeper.app.util.PermissionUtils
@@ -23,27 +22,15 @@ import com.oathkeeper.app.util.PermissionUtils
 class MainActivity : AppCompatActivity() {
     
     private lateinit var prefs: PreferenceManager
-    private var mediaProjectionManager: MediaProjectionManager? = null
-    
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
     private lateinit var settingsButton: Button
+    private lateinit var viewEventsButton: Button
     private lateinit var permissionButton: Button
     private lateinit var progressBar: ProgressBar
     
-    private val mediaProjectionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            prefs.mediaProjectionResultCode = result.resultCode
-            prefs.mediaProjectionData = result.data
-            prefs.isServiceEnabled = true
-            startScreenCaptureService(result.resultCode, result.data!!)
-            updateUI()
-            Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Screen capture permission denied", Toast.LENGTH_LONG).show()
-        }
+    companion object {
+        private const val REQUEST_ACCESSIBILITY_SERVICE = 1005
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,7 +38,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         
         prefs = PreferenceManager(this)
-        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager?
+        
+        // Initialize database
+        DatabaseManager.initialize(this)
         
         initViews()
         checkFirstRun()
@@ -64,15 +53,20 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
         settingsButton = findViewById(R.id.settingsButton)
+        viewEventsButton = findViewById(R.id.viewEventsButton)
         permissionButton = findViewById(R.id.permissionButton)
         progressBar = findViewById(R.id.progressBar)
         
         startButton.setOnClickListener {
-            if (prefs.isServiceEnabled) {
+            if (OathkeeperAccessibilityService.isRunning) {
                 stopService()
             } else {
                 startServiceWithPermissions()
             }
+        }
+        
+        viewEventsButton.setOnClickListener {
+            startActivity(Intent(this, EventsActivity::class.java))
         }
         
         settingsButton.setOnClickListener {
@@ -125,7 +119,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Permissions Required")
             .setMessage(message)
             .setPositiveButton("OK") { _, _ ->
-                requestPermissions()
+                requestNextPermission()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -133,6 +127,10 @@ class MainActivity : AppCompatActivity() {
     
     private fun getMissingPermissions(): List<String> {
         val missing = mutableListOf<String>()
+        
+        if (!PermissionUtils.isAccessibilityServiceEnabled(this)) {
+            missing.add("Accessibility Service (to monitor screen content)")
+        }
         
         if (!PermissionUtils.hasUsageStatsPermission(this)) {
             missing.add("Usage Access (to monitor app activity)")
@@ -149,26 +147,70 @@ class MainActivity : AppCompatActivity() {
         return missing
     }
     
-    private fun requestPermissions() {
-        if (!PermissionUtils.hasOverlayPermission(this)) {
-            PermissionUtils.requestOverlayPermission(this, Constants.REQUEST_OVERLAY_PERMISSION)
+    private fun requestNextPermission() {
+        when {
+            !PermissionUtils.isAccessibilityServiceEnabled(this) -> {
+                showAccessibilityServiceDialog()
+            }
+            !PermissionUtils.hasOverlayPermission(this) -> {
+                PermissionUtils.requestOverlayPermission(this, Constants.REQUEST_OVERLAY_PERMISSION)
+            }
+            !PermissionUtils.hasUsageStatsPermission(this) -> {
+                PermissionUtils.requestUsageStatsPermission(this, Constants.REQUEST_USAGE_STATS)
+            }
+            !PermissionUtils.isIgnoringBatteryOptimizations(this) -> {
+                PermissionUtils.requestBatteryOptimizationExemption(
+                    this, 
+                    Constants.REQUEST_BATTERY_OPTIMIZATION
+                )
+            }
+            else -> {
+                updateUI()
+            }
+        }
+    }
+    
+    private fun showAccessibilityServiceDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Enable Accessibility Service")
+            .setMessage(PermissionUtils.getAccessibilityServiceInstructions())
+            .setPositiveButton("OK") { _, _ ->
+                PermissionUtils.openAccessibilitySettings(this)
+            }
+            .setCancelable(false)
+            .show()
+    }
+    
+    private fun startServiceWithPermissions() {
+        if (!checkAllPermissions()) {
+            showPermissionRationale()
             return
         }
         
-        if (!PermissionUtils.hasUsageStatsPermission(this)) {
-            PermissionUtils.requestUsageStatsPermission(this, Constants.REQUEST_USAGE_STATS)
-            return
+        // Accessibility Service will auto-start when enabled
+        if (PermissionUtils.isAccessibilityServiceEnabled(this)) {
+            Toast.makeText(this, "Service is starting...", Toast.LENGTH_SHORT).show()
+            updateUI()
+        } else {
+            showAccessibilityServiceDialog()
         }
+    }
+    
+    private fun stopService() {
+        // Send broadcast to stop the service
+        val stopIntent = Intent("com.oathkeeper.app.STOP_SERVICE")
+        sendBroadcast(stopIntent)
         
-        if (!PermissionUtils.isIgnoringBatteryOptimizations(this)) {
-            PermissionUtils.requestBatteryOptimizationExemption(
-                this, 
-                Constants.REQUEST_BATTERY_OPTIMIZATION
-            )
-            return
-        }
-        
+        prefs.isServiceEnabled = false
         updateUI()
+        Toast.makeText(this, "Service stopped", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun checkAllPermissions(): Boolean {
+        return PermissionUtils.isAccessibilityServiceEnabled(this) &&
+               PermissionUtils.hasOverlayPermission(this) &&
+               PermissionUtils.hasUsageStatsPermission(this) &&
+               PermissionUtils.isIgnoringBatteryOptimizations(this)
     }
     
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -179,65 +221,28 @@ class MainActivity : AppCompatActivity() {
             Constants.REQUEST_USAGE_STATS,
             Constants.REQUEST_BATTERY_OPTIMIZATION -> {
                 // Re-check and continue requesting remaining permissions
-                requestPermissions()
+                requestNextPermission()
             }
         }
     }
     
-    private fun startServiceWithPermissions() {
-        if (!checkAllPermissions()) {
-            showPermissionRationale()
-            return
-        }
-        
-        // Request MediaProjection permission
-        mediaProjectionManager?.let { manager ->
-            mediaProjectionLauncher.launch(manager.createScreenCaptureIntent())
-        } ?: run {
-            Toast.makeText(this, "MediaProjection not available", Toast.LENGTH_LONG).show()
-        }
-    }
-    
-    private fun checkAllPermissions(): Boolean {
-        return PermissionUtils.hasOverlayPermission(this) &&
-               PermissionUtils.hasUsageStatsPermission(this) &&
-               PermissionUtils.isIgnoringBatteryOptimizations(this)
-    }
-    
-    private fun startScreenCaptureService(resultCode: Int, data: Intent) {
-        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-            putExtra("resultCode", resultCode)
-            putExtra("data", data)
-        }
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
-    }
-    
-    private fun stopService() {
-        val serviceIntent = Intent(this, ScreenCaptureService::class.java)
-        stopService(serviceIntent)
-        prefs.isServiceEnabled = false
-        prefs.clearMediaProjectionData()
-        updateUI()
-        Toast.makeText(this, "Service stopped", Toast.LENGTH_SHORT).show()
-    }
-    
     private fun updateUI() {
-        if (prefs.isServiceEnabled) {
-            statusText.text = "Status: Running"
+        val isRunning = OathkeeperAccessibilityService.isRunning
+        val hasPermissions = checkAllPermissions()
+        
+        if (isRunning) {
+            statusText.text = getString(R.string.status_running)
             statusText.setTextColor(getColor(android.R.color.holo_green_dark))
-            startButton.text = "Stop Service"
+            startButton.text = getString(R.string.stop_service)
         } else {
-            statusText.text = "Status: Stopped"
-            statusText.setTextColor(getColor(android.R.color.holo_red_dark))
-            startButton.text = "Start Service"
+            statusText.text = if (hasPermissions) getString(R.string.status_ready) else getString(R.string.status_stopped)
+            statusText.setTextColor(
+                if (hasPermissions) getColor(android.R.color.holo_blue_dark)
+                else getColor(android.R.color.holo_red_dark)
+            )
+            startButton.text = getString(R.string.start_service)
         }
         
-        val hasPermissions = checkAllPermissions()
         permissionButton.visibility = if (hasPermissions) View.GONE else View.VISIBLE
         progressBar.visibility = View.GONE
     }

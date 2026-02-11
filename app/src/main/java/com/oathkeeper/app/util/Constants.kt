@@ -16,6 +16,7 @@ object Constants {
     const val REQUEST_OVERLAY_PERMISSION = 1002
     const val REQUEST_USAGE_STATS = 1003
     const val REQUEST_BATTERY_OPTIMIZATION = 1004
+    const val REQUEST_ACCESSIBILITY_SERVICE = 1005
     
     // Preferences
     const val PREFS_NAME = "oathkeeper_prefs"

@@ -4,9 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.oathkeeper.app.service.ScreenCaptureService
+import com.oathkeeper.app.service.OathkeeperAccessibilityService
 import com.oathkeeper.app.util.Constants
 import com.oathkeeper.app.util.PreferenceManager
+import com.oathkeeper.app.util.PermissionUtils
 
 class BootReceiver : BroadcastReceiver() {
     
@@ -21,33 +22,19 @@ class BootReceiver : BroadcastReceiver() {
             val prefs = PreferenceManager(context)
             
             // Only auto-start if the service was previously enabled
-            if (prefs.isServiceEnabled && prefs.mediaProjectionResultCode != -1) {
-                val mediaProjectionData = prefs.mediaProjectionData
+            // Note: AccessibilityService auto-starts when enabled in system settings
+            // We just need to log that we're ready
+            if (prefs.isServiceEnabled) {
+                Log.d(TAG, "Service was enabled before reboot")
                 
-                if (mediaProjectionData != null) {
-                    Log.d(TAG, "Auto-starting ScreenCaptureService")
+                // Check if AccessibilityService is still enabled
+                if (PermissionUtils.isAccessibilityServiceEnabled(context)) {
+                    Log.d(TAG, "AccessibilityService is enabled, it will auto-start")
                     
-                    val serviceIntent = Intent(context, ScreenCaptureService::class.java).apply {
-                        putExtra("resultCode", prefs.mediaProjectionResultCode)
-                        putExtra("data", mediaProjectionData)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    
-                    try {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
-                        } else {
-                            context.startService(serviceIntent)
-                        }
-                        Log.d(TAG, "Service auto-started successfully")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to auto-start service: ${e.message}")
-                        // Clear the stored data so user has to re-grant permission
-                        prefs.clearMediaProjectionData()
-                        prefs.isServiceEnabled = false
-                    }
+                    // The service will automatically start when the system
+                    // initializes accessibility services
                 } else {
-                    Log.w(TAG, "MediaProjection data not available, cannot auto-start")
+                    Log.w(TAG, "AccessibilityService was disabled, cannot auto-start")
                     prefs.isServiceEnabled = false
                 }
             } else {

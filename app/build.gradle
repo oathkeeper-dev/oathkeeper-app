@@ -36,6 +36,11 @@ android {
     buildFeatures {
         viewBinding true
     }
+    
+    // Required for TensorFlow Lite
+    aaptOptions {
+        noCompress "tflite"
+    }
 }
 
 dependencies {
@@ -45,16 +50,23 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.preference:preference-ktx:1.2.1'
-
-    // TensorFlow Lite (for future ML integration)
+    
+    // RecyclerView
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    
+    // TensorFlow Lite
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
-
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    
     // Database encryption
     implementation 'net.zetetic:android-database-sqlcipher:4.5.4'
-
+    implementation 'androidx.sqlite:sqlite:2.4.0'
+    
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-
+    
     // Lifecycle components
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2'

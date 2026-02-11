@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_filter_critical"
+        android:title="Filter Critical" />
+    <item
+        android:id="@+id/action_filter_warning"
+        android:title="Filter Warning" />
+    <item
+        android:id="@+id/action_show_all"
+        android:title="Show All" />
+    <item
+        android:id="@+id/action_clear_all"
+        android:title="Clear All Events" />
+</menu>
