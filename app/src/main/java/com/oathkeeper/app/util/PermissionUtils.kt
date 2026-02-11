@@ -3,6 +3,7 @@ package com.oathkeeper.app.util
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AppOpsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -90,14 +91,17 @@ object PermissionUtils {
             AccessibilityServiceInfo.FEEDBACK_ALL_MASK
         )
         
-        val serviceComponentName = "${context.packageName}/${OathkeeperAccessibilityService::class.java.canonicalName}"
+        val serviceComponentName = ComponentName(context.packageName, OathkeeperAccessibilityService::class.java.name)
         
-        return enabledServices.any { it.id == serviceComponentName }
+        return enabledServices.any { enabledService ->
+            val enabledComponent = ComponentName.unflattenFromString(enabledService.id)
+            enabledComponent != null && enabledComponent == serviceComponentName
+        }
     }
     
-    fun openAccessibilitySettings(activity: Activity) {
+    fun openAccessibilitySettings(activity: Activity, requestCode: Int) {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        activity.startActivity(intent)
+        activity.startActivityForResult(intent, requestCode)
     }
     
     fun getAccessibilityServiceInstructions(): String {

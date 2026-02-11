@@ -175,7 +175,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Enable Accessibility Service")
             .setMessage(PermissionUtils.getAccessibilityServiceInstructions())
             .setPositiveButton("OK") { _, _ ->
-                PermissionUtils.openAccessibilitySettings(this)
+                PermissionUtils.openAccessibilitySettings(this, Constants.REQUEST_ACCESSIBILITY_SERVICE)
             }
             .setCancelable(false)
             .show()
@@ -217,6 +217,10 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         
         when (requestCode) {
+            Constants.REQUEST_ACCESSIBILITY_SERVICE -> {
+                // Re-check accessibility and continue requesting remaining permissions
+                requestNextPermission()
+            }
             Constants.REQUEST_OVERLAY_PERMISSION,
             Constants.REQUEST_USAGE_STATS,
             Constants.REQUEST_BATTERY_OPTIMIZATION -> {
