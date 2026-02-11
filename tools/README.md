@@ -2,6 +2,8 @@
 
 This directory contains tools for converting the NSFW detection model to TensorFlow Lite format.
 
+**IMPORTANT**: The app requires `nsfw_mobilenet_v2.tflite` in `app/src/main/assets/` to run. If the model is missing, the app will display a fatal error on startup and exit immediately.
+
 ## Prerequisites
 
 ```bash

@@ -54,6 +54,10 @@
     <string name="notification_detection_critical">Critical content detected</string>
     <string name="notification_detection_warning">Potentially inappropriate content detected</string>
     
+    <!-- Error Messages -->
+    <string name="error_model_missing">ML model file not found. Please contact the developer.</string>
+    <string name="exit">Exit</string>
+    
     <!-- Dialogs -->
     <string name="welcome_title">Welcome to Oathkeeper</string>
     <string name="welcome_message">Oathkeeper helps you maintain accountability by monitoring screen content locally on your device. No data is ever sent to external servers.\n\nPlease grant the required permissions to get started.</string>

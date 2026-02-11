@@ -31,6 +31,7 @@
 - [x] Constants - All configuration constants
 - [x] PreferenceManager - SharedPreferences wrapper
 - [x] PermissionUtils - Permission checking/requesting helpers
+- [x] ModelUtils - Validates ML model file existence on startup
 
 **Data Models:**
 - [x] DetectionEvent - Detection event data class
@@ -351,6 +352,23 @@ class ScreenCaptureService : Service() {
 // ... (previous MediaProjection implementation)
 }
 ```
+
+### ModelUtils.kt
+
+```kotlin
+object ModelUtils {
+    fun isModelAvailable(assetManager: AssetManager): Boolean {
+        return try {
+            assetManager.open("nsfw_mobilenet_v2.tflite").close()
+            true
+        } catch (e: IOException) {
+            false
+        }
+    }
+}
+```
+
+**Note:** Called in `MainActivity.onCreate()` before any initialization. If the model is missing, the app displays a fatal error dialog with message "ML model file not found. Please contact the developer." and exits immediately.
 
 ### NsfwClassifier.kt
 

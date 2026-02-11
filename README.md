@@ -27,6 +27,7 @@ See [ROADMAP.md](ROADMAP.md) for implementation phases and timeline.
 
 - [Technical Specification](docs/TECHNICAL_SPEC.md) - Detailed implementation details
 - [ML Models](docs/ML_MODELS.md) - Information about the machine learning pipeline
+- [AGENTS.md](AGENTS.md) - Instructions for AI agents working on this project
 
 ## Distribution
 

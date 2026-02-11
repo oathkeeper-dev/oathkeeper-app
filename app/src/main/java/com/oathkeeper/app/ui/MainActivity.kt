@@ -16,6 +16,7 @@ import com.oathkeeper.app.R
 import com.oathkeeper.app.service.OathkeeperAccessibilityService
 import com.oathkeeper.app.storage.DatabaseManager
 import com.oathkeeper.app.util.Constants
+import com.oathkeeper.app.util.ModelUtils
 import com.oathkeeper.app.util.PreferenceManager
 import com.oathkeeper.app.util.PermissionUtils
 
@@ -37,6 +38,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         
+        // Check for required ML model first
+        if (!ModelUtils.isModelAvailable(assets)) {
+            showFatalErrorDialog()
+            return
+        }
+        
         prefs = PreferenceManager(this)
         
         // Initialize database
@@ -47,6 +54,17 @@ class MainActivity : AppCompatActivity() {
         updateUI()
         
         Log.d(Constants.TAG, "MainActivity created")
+    }
+    
+    private fun showFatalErrorDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Error")
+            .setMessage(R.string.error_model_missing)
+            .setPositiveButton(R.string.exit) { _, _ ->
+                finish()
+            }
+            .setCancelable(false)
+            .show()
     }
     
     private fun initViews() {

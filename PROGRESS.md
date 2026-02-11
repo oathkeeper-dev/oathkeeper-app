@@ -49,6 +49,7 @@ Switched from MediaProjection to AccessibilityService for better UX (no screen s
 | PermissionUtils updates | ✅ Complete | AccessibilityService support added |
 | MainActivity updates | ✅ Complete | New permission flow for AccessibilityService |
 | Layout updates | ✅ Complete | View Events button, event item layouts |
+| ModelUtils | ✅ Complete | Validates model file exists on app startup |
 
 **Key Implementation Details:**
 
@@ -76,6 +77,7 @@ Switched from MediaProjection to AccessibilityService for better UX (no screen s
   │   └── EventsAdapter.kt              # NEW: RecyclerView adapter
   └── util/
       ├── Constants.kt                  # Updated
+      ├── ModelUtils.kt                 # NEW: Model validation
       ├── PermissionUtils.kt            # Updated with Accessibility helpers
       └── PreferenceManager.kt          # Updated (removed MediaProjection)
   ```
@@ -83,6 +85,7 @@ Switched from MediaProjection to AccessibilityService for better UX (no screen s
 - **New Files Created:**
   - `app/src/main/java/com/oathkeeper/app/ml/NsfwClassifier.kt`
   - `app/src/main/java/com/oathkeeper/app/storage/DatabaseManager.kt`
+  - `app/src/main/java/com/oathkeeper/app/util/ModelUtils.kt`
   - `app/src/main/java/com/oathkeeper/app/service/OathkeeperAccessibilityService.kt`
   - `app/src/main/java/com/oathkeeper/app/ui/EventsActivity.kt`
   - `app/src/main/java/com/oathkeeper/app/ui/EventsAdapter.kt`
