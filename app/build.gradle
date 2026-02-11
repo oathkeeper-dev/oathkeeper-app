@@ -36,11 +36,11 @@ android {
     buildFeatures {
         viewBinding true
     }
-    
-    // Required for TensorFlow Lite
-    aaptOptions {
-        noCompress "tflite"
+    androidResources {
+        noCompress 'tflite'
     }
+
+    // Required for TensorFlow Lite
 }
 
 dependencies {
