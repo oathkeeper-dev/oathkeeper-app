@@ -208,7 +208,7 @@ class OathkeeperAccessibilityService : AccessibilityService() {
     private fun getCurrentAppName(): String? {
         // Get the current foreground app name
         return try {
-            val packageName = rootInWindow?.packageName?.toString()
+            val packageName = rootInActiveWindow?.packageName?.toString()
             packageName?.let {
                 val pm = packageManager
                 val appInfo = pm.getApplicationInfo(it, 0)
