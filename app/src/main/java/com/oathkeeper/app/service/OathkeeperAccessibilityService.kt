@@ -22,6 +22,7 @@ import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.oathkeeper.app.R
 import com.oathkeeper.app.ml.NsfwClassifier
 import com.oathkeeper.app.model.DetectionEvent
@@ -73,7 +74,7 @@ class OathkeeperAccessibilityService : AccessibilityService() {
         
         // Register stop receiver
         val filter = IntentFilter(ACTION_STOP_SERVICE)
-        registerReceiver(stopReceiver, filter)
+        ContextCompat.registerReceiver(this, stopReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         
         Log.d(TAG, "OathkeeperAccessibilityService created")
     }

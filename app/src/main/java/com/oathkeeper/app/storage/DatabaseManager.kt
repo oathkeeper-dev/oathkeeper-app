@@ -39,15 +39,12 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
         }
     }
     
-    private val writableDb: SQLiteDatabase
-        get() = writableDatabase
-    
-    override fun getWritableDatabase(): SQLiteDatabase {
-        return super.getWritableDatabase(DATABASE_PASSWORD)
+    private fun getWritableDb(): SQLiteDatabase {
+        return getWritableDatabase(DATABASE_PASSWORD)
     }
     
-    override fun getReadableDatabase(): SQLiteDatabase {
-        return super.getReadableDatabase(DATABASE_PASSWORD)
+    private fun getReadableDb(): SQLiteDatabase {
+        return getReadableDatabase(DATABASE_PASSWORD)
     }
     
     override fun onCreate(db: SQLiteDatabase) {
@@ -95,7 +92,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
         }
         
         return try {
-            writableDb.insert(TABLE_EVENTS, null, values)
+            getWritableDb().insert(TABLE_EVENTS, null, values)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to insert event: ${e.message}")
             -1
@@ -104,7 +101,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
     
     fun getAllEvents(): List<DetectionEvent> {
         val events = mutableListOf<DetectionEvent>()
-        val cursor = readableDb.query(
+        val cursor = getReadableDb().query(
             TABLE_EVENTS,
             null,
             null,
@@ -125,7 +122,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
     
     fun getEventsByDateRange(start: Long, end: Long): List<DetectionEvent> {
         val events = mutableListOf<DetectionEvent>()
-        val cursor = readableDb.query(
+        val cursor = getReadableDb().query(
             TABLE_EVENTS,
             null,
             "timestamp >= ? AND timestamp <= ?",
@@ -146,7 +143,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
     
     fun getEventsBySeverity(severity: String): List<DetectionEvent> {
         val events = mutableListOf<DetectionEvent>()
-        val cursor = readableDb.query(
+        val cursor = getReadableDb().query(
             TABLE_EVENTS,
             null,
             "severity = ?",
@@ -171,7 +168,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
             notes?.let { put("notes", it) }
         }
         
-        return writableDb.update(
+        return getWritableDb().update(
             TABLE_EVENTS,
             values,
             "id = ?",
@@ -180,7 +177,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
     }
     
     fun deleteEvent(id: Long): Boolean {
-        return writableDb.delete(
+        return getWritableDb().delete(
             TABLE_EVENTS,
             "id = ?",
             arrayOf(id.toString())
@@ -188,7 +185,7 @@ class DatabaseManager private constructor(context: Context) : SQLiteOpenHelper(
     }
     
     fun getEventCount(): Int {
-        val cursor = readableDb.rawQuery("SELECT COUNT(*) FROM $TABLE_EVENTS", null)
+        val cursor = getReadableDb().rawQuery("SELECT COUNT(*) FROM $TABLE_EVENTS", null)
         return cursor.use {
             if (it.moveToFirst()) it.getInt(0) else 0
         }

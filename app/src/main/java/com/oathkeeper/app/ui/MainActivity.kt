@@ -198,7 +198,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun stopService() {
         // Send broadcast to stop the service
-        val stopIntent = Intent("com.oathkeeper.app.STOP_SERVICE")
+        val stopIntent = Intent("com.oathkeeper.app.STOP_SERVICE").setPackage(packageName)
         sendBroadcast(stopIntent)
         
         prefs.isServiceEnabled = false
