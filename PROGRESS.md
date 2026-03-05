@@ -35,8 +35,11 @@
 **Last Updated:** March 5, 2026
 
 **Bug Fixes (March 5, 2026):**
-1. Fixed monitoring service not starting - `startServiceWithPermissions()` was showing "Service is starting..." toast but didn't enable Accessibility Service. Users must manually toggle on the service in system settings after granting all permissions.
-2. Consolidated permission flow - removed duplicate welcome dialog. Now shows single "Welcome to Oathkeeper" dialog with app purpose + list of required permissions, then proceeds directly to individual permission requests.
+1. Fixed monitoring service not starting after clicking "Start Monitoring" - `startServiceWithPermissions()` was calling `updateUI()` but never actually started the service with `startForegroundService()`. Added new `startMonitoringService()` method that properly launches the Accessibility Service.
+2. Fixed MediaProjection data transfer - MainActivity wasn't passing the screen capture Intent to the service. Added `setPendingMediaProjection()` companion method and updated service startup flow to transfer permission data before starting.
+3. Added UI state synchronization via BroadcastReceiver - Button text wasn't updating immediately after service started because `updateUI()` ran before service's `onServiceConnected()`. Added broadcast mechanism where service sends `SERVICE_STATE_CHANGED` broadcasts on start/stop, and MainActivity registers a receiver to update the button text/status in real-time.
+4. Added auto-start on return from Accessibility settings - When user enables Accessibility Service and returns to app, service now auto-starts if all permissions are granted (via `onResume()` check). Consolidated existing permission fix note above into this comprehensive fix.
+5. Consolidated permission flow - removed duplicate welcome dialog. Now shows single "Welcome to Oathkeeper" dialog with app purpose + list of required permissions, then proceeds directly to individual permission requests.
 
 **Goal:** Integrate TensorFlow Lite and basic NSFW detection
 

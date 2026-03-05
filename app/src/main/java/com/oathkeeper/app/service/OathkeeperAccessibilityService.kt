@@ -60,18 +60,35 @@ class OathkeeperAccessibilityService : AccessibilityService() {
     private var screenWidth: Int = 0
     private var screenHeight: Int = 0
     
-    private var pendingMediaProjectionResultCode: Int = -1
-    private var pendingMediaProjectionData: Intent? = null
-    
     companion object {
         private const val TAG = "Oathkeeper"
         private const val NOTIFICATION_CHANNEL_ID = "oathkeeper_accessibility"
         private const val NOTIFICATION_CHANNEL_NAME = "Oathkeeper Accessibility Service"
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP_SERVICE = "com.oathkeeper.app.STOP_SERVICE"
+        const val ACTION_SERVICE_STATE_CHANGED = "com.oathkeeper.app.SERVICE_STATE_CHANGED"
         
         var isRunning = false
             private set
+        
+        var pendingMediaProjectionResultCode: Int = -1
+            private set
+        
+        var pendingMediaProjectionData: Intent? = null
+            private set
+        
+        fun setPendingMediaProjection(resultCode: Int, data: Intent?) {
+            pendingMediaProjectionResultCode = resultCode
+            pendingMediaProjectionData = data
+        }
+        
+        private fun broadcastServiceState(context: Context, running: Boolean) {
+            val intent = Intent(ACTION_SERVICE_STATE_CHANGED).apply {
+                setPackage(context.packageName)
+                putExtra("running", running)
+            }
+            context.sendBroadcast(intent)
+        }
     }
     
     override fun onCreate() {
@@ -110,6 +127,8 @@ class OathkeeperAccessibilityService : AccessibilityService() {
             isRunning = true
             prefs.isServiceEnabled = true
             
+            broadcastServiceState(this, true)
+            
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, createNotification())
             
@@ -128,20 +147,15 @@ class OathkeeperAccessibilityService : AccessibilityService() {
         val resultCode = prefs.mediaProjectionResultCode
         val dataString = prefs.mediaProjectionData
         
-        // Check if MainActivity has the result stored
-        if (MainActivity.mediaProjectionResultCode != -1 && MainActivity.mediaProjectionData != null) {
-            // Use the result from MainActivity
+        if (pendingMediaProjectionResultCode != -1 && pendingMediaProjectionData != null) {
+            setupWithMediaProjectionResult(pendingMediaProjectionResultCode, pendingMediaProjectionData!!)
+        } else if (MainActivity.mediaProjectionResultCode != -1 && MainActivity.mediaProjectionData != null) {
             setupWithMediaProjectionResult(MainActivity.mediaProjectionResultCode, MainActivity.mediaProjectionData!!)
         } else if (resultCode != -1 && dataString != null) {
-            // Try to use stored preference (though Intent can't be persisted)
-            // This will likely fail - need user to grant permission again
             Log.w(TAG, "Stored MediaProjection permission found but Intent not available")
-            // Clear the stale data
             prefs.mediaProjectionResultCode = -1
             prefs.mediaProjectionData = null
         }
-        // If no stored permission, MainActivity should have requested it already
-        // This service won't have MediaProjection until user grants permission
     }
     
     fun setupWithMediaProjectionResult(resultCode: Int, data: Intent) {
@@ -421,9 +435,15 @@ class OathkeeperAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         
+        val wasRunning = isRunning
+        
         isServiceRunning = false
         isRunning = false
         prefs.isServiceEnabled = false
+        
+        if (wasRunning) {
+            broadcastServiceState(this, false)
+        }
         
         captureHandler?.removeCallbacks(captureRunnable!!)
         serviceScope.cancel()

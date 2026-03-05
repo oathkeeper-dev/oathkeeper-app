@@ -1,7 +1,10 @@
 package com.oathkeeper.app.ui
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.provider.Settings
@@ -13,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.oathkeeper.app.R
 import com.oathkeeper.app.service.OathkeeperAccessibilityService
 import com.oathkeeper.app.storage.DatabaseManager
@@ -31,6 +35,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionButton: Button
     private lateinit var progressBar: ProgressBar
     private var mediaProjectionManager: MediaProjectionManager? = null
+    private val serviceStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == OathkeeperAccessibilityService.ACTION_SERVICE_STATE_CHANGED) {
+                updateUI()
+            }
+        }
+    }
     
     companion object {
         private const val REQUEST_ACCESSIBILITY_SERVICE = 1005
@@ -54,6 +65,9 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize database
         DatabaseManager.initialize(this)
+        
+        val filter = IntentFilter(OathkeeperAccessibilityService.ACTION_SERVICE_STATE_CHANGED)
+        ContextCompat.registerReceiver(this, serviceStateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         
         initViews()
         checkFirstRun()
@@ -234,11 +248,35 @@ class MainActivity : AppCompatActivity() {
         
         // Check if Accessibility Service is enabled
         if (PermissionUtils.isAccessibilityServiceEnabled(this)) {
-            // Service already enabled - just update UI
-            updateUI()
+            // Service already enabled - start monitoring service
+            startMonitoringService()
         } else {
             // Guide user to enable it in system settings
             showAccessibilityServiceDialog()
+        }
+    }
+    
+    private fun startMonitoringService() {
+        val intent = Intent(this, OathkeeperAccessibilityService::class.java)
+        
+        // Transfer MediaProjection data if available
+        if (mediaProjectionResultCode != -1 && mediaProjectionData != null) {
+            OathkeeperAccessibilityService.setPendingMediaProjection(
+                mediaProjectionResultCode,
+                mediaProjectionData
+            )
+        }
+        
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Toast.makeText(this, "Monitoring started", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to start service: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(Constants.TAG, "Failed to start service", e)
         }
     }
     
@@ -318,6 +356,25 @@ class MainActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        
+        // Check if user enabled Accessibility Service after being prompted
+        if (!OathkeeperAccessibilityService.isRunning && 
+            PermissionUtils.isAccessibilityServiceEnabled(this)) {
+            // User just enabled it - check permissions and auto-start
+            if (checkAllPermissions()) {
+                startMonitoringService()
+            }
+        }
+        
         updateUI()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(serviceStateReceiver)
+        } catch (e: Exception) {
+            // Receiver might not be registered
+        }
     }
 }
