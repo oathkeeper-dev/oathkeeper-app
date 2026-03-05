@@ -32,6 +32,12 @@
 
 ### Phase 2: ML Core ✅ COMPLETE
 
+**Last Updated:** March 5, 2026
+
+**Bug Fixes (March 5, 2026):**
+1. Fixed monitoring service not starting - `startServiceWithPermissions()` was showing "Service is starting..." toast but didn't enable Accessibility Service. Users must manually toggle on the service in system settings after granting all permissions.
+2. Consolidated permission flow - removed duplicate welcome dialog. Now shows single "Welcome to Oathkeeper" dialog with app purpose + list of required permissions, then proceeds directly to individual permission requests.
+
 **Goal:** Integrate TensorFlow Lite and basic NSFW detection
 
 **Major Change (Feb 9, 2026):**

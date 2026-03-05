@@ -98,31 +98,17 @@ class MainActivity : AppCompatActivity() {
         }
         
         permissionButton.setOnClickListener {
-            showPermissionRationale()
+            showPermissionFlow()
         }
     }
     
     private fun checkFirstRun() {
         if (prefs.isFirstRun) {
-            showWelcomeDialog()
             prefs.isFirstRun = false
         }
     }
     
-    private fun showWelcomeDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Welcome to Oathkeeper")
-            .setMessage("Oathkeeper helps you maintain accountability by monitoring screen content locally on your device. " +
-                    "No data is ever sent to external servers.\n\n" +
-                    "Please grant the required permissions to get started.")
-            .setPositiveButton("Get Started") { _, _ ->
-                showPermissionRationale()
-            }
-            .setCancelable(false)
-            .show()
-    }
-    
-    private fun showPermissionRationale() {
+    private fun showPermissionFlow() {
         val missingPermissions = getMissingPermissions()
         
         if (missingPermissions.isEmpty()) {
@@ -130,23 +116,29 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        val message = buildString {
-            appendLine("The following permissions are required:")
-            missingPermissions.forEach { permission ->
-                appendLine("\u2022 $permission")
-            }
+        // Show welcome + permission list only once, then request individual permissions
+        val introMessage = buildString {
+            appendLine("Oathkeeper helps you maintain accountability by monitoring screen content locally on your device.")
+            appendLine("No data is ever sent to external servers.")
             appendLine()
-            appendLine("Tap OK to grant these permissions.")
+            appendLine("The following permissions are required:")
         }
         
+        val message = introMessage + missingPermissions.joinToString("\n") { "\u2022 $it" }
+        
         AlertDialog.Builder(this)
-            .setTitle("Permissions Required")
+            .setTitle("Welcome to Oathkeeper")
             .setMessage(message)
-            .setPositiveButton("OK") { _, _ ->
+            .setPositiveButton("Get Started") { _, _ ->
                 requestNextPermission()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun showPermissionRationale() {
+        // Delegate to showPermissionFlow for consistency
+        showPermissionFlow()
     }
     
     private fun getMissingPermissions(): List<String> {
@@ -197,6 +189,8 @@ class MainActivity : AppCompatActivity() {
                 requestMediaProjectionPermission()
             }
             else -> {
+                // All permissions granted - update UI to show service is ready to start
+                Toast.makeText(this, "All permissions granted! Tap 'Start Monitoring' to begin.", Toast.LENGTH_LONG).show()
                 updateUI()
             }
         }
@@ -238,11 +232,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // Accessibility Service will auto-start when enabled
+        // Check if Accessibility Service is enabled
         if (PermissionUtils.isAccessibilityServiceEnabled(this)) {
-            Toast.makeText(this, "Service is starting...", Toast.LENGTH_SHORT).show()
+            // Service already enabled - just update UI
             updateUI()
         } else {
+            // Guide user to enable it in system settings
             showAccessibilityServiceDialog()
         }
     }
