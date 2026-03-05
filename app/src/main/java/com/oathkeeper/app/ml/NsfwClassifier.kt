@@ -38,28 +38,41 @@ class NsfwClassifier(private val assetManager: AssetManager) {
     }
     
     private fun loadModel() {
-        try {
-            val modelBuffer = loadModelFile()
-            val options = Interpreter.Options().apply {
-                // Use NNAPI for acceleration when available
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    try {
-                        val nnApiDelegate = NnApiDelegate()
-                        addDelegate(nnApiDelegate)
-                        Log.d(TAG, "NNAPI delegate added")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "NNAPI not available, using CPU")
-                        setNumThreads(4)
-                    }
-                } else {
-                    setNumThreads(4)
+        val modelBuffer = loadModelFile()
+        
+        // Try NNAPI first, fall back to CPU if it fails
+        var nnApiSuccess: Boolean = false
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            try {
+                val nnApiDelegate = NnApiDelegate()
+                Log.d(TAG, "Attempting NNAPI delegate")
+                
+                // Try creating interpreter with NNAPI
+                val nnApiOptions = Interpreter.Options().apply {
+                    addDelegate(nnApiDelegate)
                 }
+                val testInterpreter = Interpreter(modelBuffer, nnApiOptions)
+                testInterpreter.close()
+                Log.d(TAG, "NNAPI delegate successful")
+                nnApiSuccess = true
+            } catch (e: Exception) {
+                Log.w(TAG, "NNAPI failed (${e.message}), falling back to CPU")
             }
-            interpreter = Interpreter(modelBuffer, options)
-            Log.d(TAG, "NSFW model loaded successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load model: ${e.message}")
-            throw IOException("Failed to load TFLite model", e)
+        }
+        
+        // Create final interpreter based on NNAPI availability
+        if (nnApiSuccess) {
+            val nnApiOptions = Interpreter.Options().apply {
+                addDelegate(NnApiDelegate())
+            }
+            interpreter = Interpreter(modelBuffer, nnApiOptions)
+        } else {
+            Log.d(TAG, "Using CPU-only inference")
+            val cpuOptions = Interpreter.Options().apply {
+                setNumThreads(4)
+            }
+            interpreter = Interpreter(modelBuffer, cpuOptions)
         }
     }
     
