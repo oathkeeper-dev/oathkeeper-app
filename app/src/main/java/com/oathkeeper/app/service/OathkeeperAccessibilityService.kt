@@ -10,14 +10,16 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
-import android.hardware.HardwareBuffer
 import android.hardware.display.DisplayManager
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -35,7 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.nio.ByteBuffer
 
 class OathkeeperAccessibilityService : AccessibilityService() {
     
@@ -53,6 +55,13 @@ class OathkeeperAccessibilityService : AccessibilityService() {
     private var imageReader: ImageReader? = null
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
     private var windowManager: WindowManager? = null
+    
+    private var screenDensity: Int = 0
+    private var screenWidth: Int = 0
+    private var screenHeight: Int = 0
+    
+    private var pendingMediaProjectionResultCode: Int = -1
+    private var pendingMediaProjectionData: Intent? = null
     
     companion object {
         private const val TAG = "Oathkeeper"
@@ -84,6 +93,19 @@ class OathkeeperAccessibilityService : AccessibilityService() {
         
         try {
             nsfwClassifier = NsfwClassifier(assets)
+            
+            // Get screen dimensions
+            val displayMetrics = DisplayMetrics()
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            @Suppress("DEPRECATION")
+            windowManager?.defaultDisplay?.getRealMetrics(displayMetrics)
+            screenWidth = displayMetrics.widthPixels
+            screenHeight = displayMetrics.heightPixels
+            screenDensity = displayMetrics.densityDpi
+            
+            // Setup or restore MediaProjection
+            setupMediaProjection()
+            
             isServiceRunning = true
             isRunning = true
             prefs.isServiceEnabled = true
@@ -95,9 +117,120 @@ class OathkeeperAccessibilityService : AccessibilityService() {
             startPeriodicCapture()
             
             Log.d(TAG, "Accessibility service connected and started")
+            Log.d(TAG, "Screen: ${screenWidth}x${screenHeight}, density: $screenDensity")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize service: ${e.message}")
             stopSelf()
+        }
+    }
+    
+    private fun setupMediaProjection() {
+        val resultCode = prefs.mediaProjectionResultCode
+        val dataString = prefs.mediaProjectionData
+        
+        // Check if MainActivity has the result stored
+        if (MainActivity.mediaProjectionResultCode != -1 && MainActivity.mediaProjectionData != null) {
+            // Use the result from MainActivity
+            setupWithMediaProjectionResult(MainActivity.mediaProjectionResultCode, MainActivity.mediaProjectionData!!)
+        } else if (resultCode != -1 && dataString != null) {
+            // Try to use stored preference (though Intent can't be persisted)
+            // This will likely fail - need user to grant permission again
+            Log.w(TAG, "Stored MediaProjection permission found but Intent not available")
+            // Clear the stale data
+            prefs.mediaProjectionResultCode = -1
+            prefs.mediaProjectionData = null
+        }
+        // If no stored permission, MainActivity should have requested it already
+        // This service won't have MediaProjection until user grants permission
+    }
+    
+    fun setupWithMediaProjectionResult(resultCode: Int, data: Intent) {
+        try {
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+            
+            // Store for persistence
+            prefs.mediaProjectionResultCode = resultCode
+            // Note: We can't directly store Intent, so we store a flag that permission exists
+            prefs.mediaProjectionData = "granted"
+            
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.d(TAG, "MediaProjection stopped")
+                    stopSelf()
+                }
+            }, Handler(Looper.getMainLooper()))
+            
+            setupVirtualDisplay()
+            Log.d(TAG, "MediaProjection setup complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup MediaProjection: ${e.message}")
+        }
+    }
+    
+    private fun setupVirtualDisplay() {
+        try {
+            imageReader = ImageReader.newInstance(
+                screenWidth,
+                screenHeight,
+                PixelFormat.RGBA_8888,
+                2
+            )
+            
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "OathkeeperCapture",
+                screenWidth,
+                screenHeight,
+                screenDensity,
+                android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
+                null
+            )
+            
+            // Setup listener for new images
+            imageReader?.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image != null) {
+                    try {
+                        val bitmap = imageToBitmap(image)
+                        bitmap?.let { processScreenshot(it) }
+                    } finally {
+                        image.close()
+                    }
+                }
+            }, Handler(Looper.getMainLooper()))
+            
+            Log.d(TAG, "VirtualDisplay setup complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup VirtualDisplay: ${e.message}")
+        }
+    }
+    
+    private fun imageToBitmap(image: Image): Bitmap? {
+        return try {
+            val planes = image.planes
+            val buffer: ByteBuffer = planes[0].buffer
+            val pixelStride = planes[0].pixelStride
+            val rowStride = planes[0].rowStride
+            val rowPadding = rowStride - pixelStride * screenWidth
+            
+            val bitmap = Bitmap.createBitmap(
+                screenWidth + rowPadding / pixelStride,
+                image.height,
+                Bitmap.Config.ARGB_8888
+            )
+            bitmap.copyPixelsFromBuffer(buffer)
+            
+            // Crop to actual screen size if needed
+            if (rowPadding > 0) {
+                Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+            } else {
+                bitmap
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to convert image to bitmap: ${e.message}")
+            null
         }
     }
     
@@ -120,32 +253,12 @@ class OathkeeperAccessibilityService : AccessibilityService() {
     }
     
     private fun captureAndAnalyze() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Use the new takeScreenshot API on Android 11+
-            val executor = mainExecutor
-            takeScreenshot(DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, executor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: ScreenshotResult) {
-                        val hardwareBuffer = screenshot.hardwareBuffer
-                        val colorSpace = screenshot.colorSpace
-                        
-                        if (hardwareBuffer != null) {
-                            val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
-                            hardwareBuffer.close()
-                            
-                            bitmap?.let { processScreenshot(it) }
-                        }
-                    }
-                    
-                    override fun onFailure(errorCode: Int) {
-                        Log.e(TAG, "Screenshot failed with error code: $errorCode")
-                    }
-                }
-            )
-        } else {
-            // For older devices, use MediaProjection-based approach
-            captureWithMediaProjection()
+        // Screenshot capture is now handled by ImageReader's OnImageAvailableListener
+        // This method is kept for manual trigger if needed
+        if (mediaProjection == null || imageReader == null) {
+            Log.w(TAG, "MediaProjection not ready, skipping capture")
         }
+        // The actual capture happens automatically via ImageReader callback
     }
     
     private fun captureWithMediaProjection() {
@@ -319,6 +432,15 @@ class OathkeeperAccessibilityService : AccessibilityService() {
             unregisterReceiver(stopReceiver)
         } catch (e: Exception) {
             // Receiver might not be registered
+        }
+        
+        // Clean up MediaProjection resources
+        try {
+            virtualDisplay?.release()
+            imageReader?.close()
+            mediaProjection?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning up MediaProjection: ${e.message}")
         }
         
         nsfwClassifier.close()

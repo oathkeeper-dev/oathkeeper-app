@@ -39,4 +39,13 @@ class PreferenceManager(context: Context) {
     var enableNotifications: Boolean
         get() = prefs.getBoolean(Constants.PREF_ENABLE_NOTIFICATIONS, true)
         set(value) = prefs.edit { putBoolean(Constants.PREF_ENABLE_NOTIFICATIONS, value) }
+    
+    // MediaProjection data (for persistence across restarts)
+    var mediaProjectionResultCode: Int
+        get() = prefs.getInt(Constants.PREF_MEDIA_PROJECTION_RESULT_CODE, -1)
+        set(value) = prefs.edit { putInt(Constants.PREF_MEDIA_PROJECTION_RESULT_CODE, value) }
+    
+    var mediaProjectionData: String?
+        get() = prefs.getString(Constants.PREF_MEDIA_PROJECTION_DATA, null)
+        set(value) = prefs.edit { putString(Constants.PREF_MEDIA_PROJECTION_DATA, value) }
 }

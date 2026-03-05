@@ -2,6 +2,7 @@ package com.oathkeeper.app.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -29,9 +30,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewEventsButton: Button
     private lateinit var permissionButton: Button
     private lateinit var progressBar: ProgressBar
+    private var mediaProjectionManager: MediaProjectionManager? = null
     
     companion object {
         private const val REQUEST_ACCESSIBILITY_SERVICE = 1005
+        var mediaProjectionResultCode: Int = -1
+        var mediaProjectionData: Intent? = null
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +47,8 @@ class MainActivity : AppCompatActivity() {
             showFatalErrorDialog()
             return
         }
+        
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
         
         prefs = PreferenceManager(this)
         
@@ -162,6 +168,11 @@ class MainActivity : AppCompatActivity() {
             missing.add("Battery Optimization Exemption")
         }
         
+        // Check MediaProjection - stored result code indicates permission was granted before
+        if (prefs.mediaProjectionResultCode == -1 && prefs.mediaProjectionData == null) {
+            missing.add("Screen Capture Permission")
+        }
+        
         return missing
     }
     
@@ -182,10 +193,32 @@ class MainActivity : AppCompatActivity() {
                     Constants.REQUEST_BATTERY_OPTIMIZATION
                 )
             }
+            prefs.mediaProjectionResultCode == -1 && prefs.mediaProjectionData == null -> {
+                requestMediaProjectionPermission()
+            }
             else -> {
                 updateUI()
             }
         }
+    }
+    
+    private fun requestMediaProjectionPermission() {
+        AlertDialog.Builder(this)
+            .setTitle("Screen Capture Permission")
+            .setMessage("Oathkeeper needs screen capture permission to monitor content. " +
+                    "This allows the app to take screenshots of your screen for analysis.\n\n" +
+                    "No content is sent to any server - all analysis happens on-device.")
+            .setPositiveButton("Allow") { _, _ ->
+                mediaProjectionManager?.let { mgr ->
+                    startActivityForResult(
+                        mgr.createScreenCaptureIntent(),
+                        Constants.REQUEST_MEDIA_PROJECTION
+                    )
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .setCancelable(false)
+            .show()
     }
     
     private fun showAccessibilityServiceDialog() {
@@ -228,7 +261,8 @@ class MainActivity : AppCompatActivity() {
         return PermissionUtils.isAccessibilityServiceEnabled(this) &&
                PermissionUtils.hasOverlayPermission(this) &&
                PermissionUtils.hasUsageStatsPermission(this) &&
-               PermissionUtils.isIgnoringBatteryOptimizations(this)
+               PermissionUtils.isIgnoringBatteryOptimizations(this) &&
+               (prefs.mediaProjectionResultCode != -1 || prefs.mediaProjectionData != null)
     }
     
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -237,6 +271,24 @@ class MainActivity : AppCompatActivity() {
         when (requestCode) {
             Constants.REQUEST_ACCESSIBILITY_SERVICE -> {
                 // Re-check accessibility and continue requesting remaining permissions
+                requestNextPermission()
+            }
+            Constants.REQUEST_MEDIA_PROJECTION -> {
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    // Store the result for persistence
+                    prefs.mediaProjectionResultCode = resultCode
+                    prefs.mediaProjectionData = "granted"
+                    
+                    // Store in companion object for accessibility service to use
+                    mediaProjectionResultCode = resultCode
+                    mediaProjectionData = data
+                    
+                    Log.d(Constants.TAG, "MediaProjection permission granted")
+                } else {
+                    Log.w(Constants.TAG, "MediaProjection permission denied")
+                    Toast.makeText(this, "Screen capture permission is required", Toast.LENGTH_LONG).show()
+                }
+                // Continue with remaining permissions or start service
                 requestNextPermission()
             }
             Constants.REQUEST_OVERLAY_PERMISSION,
